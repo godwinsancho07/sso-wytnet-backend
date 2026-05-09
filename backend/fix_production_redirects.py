@@ -1,47 +1,40 @@
 import asyncio
 import os
 from dotenv import load_dotenv
-from app.db.session import SessionLocal
+from app.db.session import async_session_factory
 from app.models.oauth_client import OAuthClient
 from sqlalchemy import select
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Dynamically get the base URL from .env (e.g., https://wytnet.com)
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip('/')
+# THE FIX: We are forcing the production URL for your specific app ID
+PROD_DOMAIN = "https://wytnet.com"
+TARGET_CLIENT_ID = "client_XCCfrYINlTpyDqKD3b1Hsw" # From your error message
+TARGET_URI = f"{PROD_DOMAIN}/habit-tracking/dashboard.html"
 
-async def fix_production_redirects():
-    async with SessionLocal() as db:
-        # Get all registered clients
-        res = await db.execute(select(OAuthClient))
-        clients = res.scalars().all()
+async def force_fix_redirect():
+    async with async_session_factory() as db:
+        # Find your specific app
+        res = await db.execute(select(OAuthClient).where(OAuthClient.client_id == TARGET_CLIENT_ID))
+        client = res.scalar_one_or_none()
         
-        print(f"--- Updating {len(clients)} Apps to use Base URL: {FRONTEND_URL} ---")
+        if not client:
+            print(f"❌ Error: Could not find app with ID {TARGET_CLIENT_ID} in database.")
+            return
+
+        print(f"Found App: '{client.app_name}'")
         
-        for client in clients:
-            # Create dynamic slug from the app name
-            slug = client.app_name.lower().replace(" ", "-")
+        current_uris = list(client.redirect_uris) if client.redirect_uris else []
+        
+        if TARGET_URI not in current_uris:
+            current_uris.append(TARGET_URI)
+            client.redirect_uris = current_uris
+            await db.commit()
+            print(f"✅ SUCCESS: Authorized {TARGET_URI}")
+        else:
+            print(f"ℹ️ Already Authorized: {TARGET_URI}")
             
-            # Construct the dynamic redirect URI
-            # If the app name is "Habit Tracking", URI becomes "FRONTEND_URL/habit-tracking/dashboard.html"
-            prod_uri = f"{FRONTEND_URL}/{slug}/dashboard.html"
-            
-            # Handle special case for 'project-a' if it doesn't follow the slug pattern
-            if "project-a" in slug or "project a" in client.app_name.lower():
-                prod_uri = f"{FRONTEND_URL}/project-a/dashboard.html"
-            
-            current_uris = list(client.redirect_uris) if client.redirect_uris else []
-            
-            if prod_uri not in current_uris:
-                current_uris.append(prod_uri)
-                client.redirect_uris = current_uris
-                print(f"✅ Authorized: {prod_uri} (for '{client.app_name}')")
-            else:
-                print(f"ℹ️ Already Exists: {prod_uri}")
-                
-        await db.commit()
-        print("\n✨ Database update complete. All apps are now synchronized with your FRONTEND_URL.")
+        print(f"\nAll allowed URIs for this app: {client.redirect_uris}")
 
 if __name__ == "__main__":
-    asyncio.run(fix_production_redirects())
+    asyncio.run(force_fix_redirect())
