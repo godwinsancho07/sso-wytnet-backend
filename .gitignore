@@ -1,0 +1,158 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# SSO Identity Provider — .gitignore
+# NEVER push secrets, keys, or env files to git@github.com:DHILIP-S-E/sso-wytnet.git
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Secrets & Environment Files ───────────────────────────────────────────────
+# ALL .env files anywhere in the repo — NEVER commit these
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+**/*.env
+
+# Keep only the example/template files
+!.env.example
+!**/.env.example
+!*.env.example
+
+# ── Cryptographic Keys (RSA / JWT signing keys) ───────────────────────────────
+keys/
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+backend/keys/
+
+# ── Python / FastAPI Backend ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+.env.bak
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+junit*.xml
+
+# MyPy / type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
+
+# Alembic (keep migrations, ignore local test DBs)
+*.db
+*.sqlite3
+*.sqlite
+
+# ── Node.js / React / Vite Frontend ──────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+
+# Build output
+dist/
+build/
+frontend/dist/
+frontend/build/
+.output/
+
+# Vite / framework caches
+.vite/
+frontend/.vite/
+*.local
+
+# Package locks (keep one, ignore the rest)
+# Uncomment if you don't want to commit lockfiles:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# ── IDE & Editor Files ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# ── OS Generated Files ────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# Keep docker-compose.yml but ignore overrides with secrets
+docker-compose.override.yml
+docker-compose.local.yml
+docker-compose.prod.yml
+
+# ── Temporary & Misc ──────────────────────────────────────────────────────────
+tmp/
+temp/
+.tmp/
+*.bak
+*.backup
+*.orig
+*.rej
+
+# ── Demo / Dev Utilities (local only) ────────────────────────────────────────
+serve.py
+demo-client.html

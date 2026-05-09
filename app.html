@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SSO Demo Client</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 16px;
+      padding: 36px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+    .logo-icon {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    .logo h1 { font-size: 20px; font-weight: 700; color: #f1f5f9; }
+    .logo p  { font-size: 12px; color: #64748b; margin-top: 2px; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 6px;
+      letter-spacing: 0.03em;
+    }
+    input[type=email], input[type=password] {
+      width: 100%;
+      padding: 11px 14px;
+      background: #0f1117;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: #6366f1; }
+    .field { margin-bottom: 16px; }
+
+    .btn {
+      width: 100%;
+      padding: 12px 20px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.15s ease;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
+    .btn-primary:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+    .btn-google { background: #fff; color: #1e293b; border: 1px solid #e2e8f0; margin-top: 10px; }
+    .btn-google:hover { background: #f8fafc; }
+    .btn-danger { background: #ef4444; color: #fff; margin-top: 10px; }
+    .btn-danger:hover { opacity: 0.85; }
+
+    .divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 18px 0; color: #475569; font-size: 12px;
+    }
+    .divider::before, .divider::after {
+      content: ''; flex: 1; height: 1px; background: #2d3748;
+    }
+
+    .profile-box {
+      background: #0f1117; border: 1px solid #2d3748;
+      border-radius: 12px; padding: 20px; margin-top: 4px;
+    }
+    .profile-header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+    .avatar {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; overflow: hidden; flex-shrink: 0;
+    }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .profile-name { font-weight: 700; font-size: 16px; }
+    .profile-email { font-size: 13px; color: #94a3b8; margin-top: 2px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 600; padding: 3px 8px;
+      border-radius: 20px; background: #1e293b;
+      border: 1px solid #334155; color: #94a3b8; margin-top: 6px;
+    }
+    .badge.verified { background: #052e16; border-color: #166534; color: #4ade80; }
+
+    .token-box {
+      margin-top: 14px; background: #0f1117;
+      border: 1px solid #2d3748; border-radius: 8px; padding: 12px 14px;
+    }
+    .token-label {
+      font-size: 10px; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #64748b; margin-bottom: 6px;
+    }
+    .token-value {
+      font-family: monospace; font-size: 11px; color: #a78bfa;
+      word-break: break-all; line-height: 1.5;
+    }
+
+    .alert {
+      padding: 10px 14px; border-radius: 8px;
+      font-size: 13px; margin-top: 14px;
+    }
+    .alert-error { background: #1c0a0a; border: 1px solid #7f1d1d; color: #fca5a5; }
+    .alert-info  { background: #0c1a2e; border: 1px solid #1e3a5f; color: #93c5fd; }
+
+    #loading {
+      text-align: center; color: #6366f1;
+      padding: 16px; font-size: 14px; display: none;
+    }
+    .section-title {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #64748b; margin-bottom: 14px;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-icon">🔐</div>
+    <div>
+      <h1>Demo Application</h1>
+      <p>Powered by your local SSO · port 3001</p>
+    </div>
+  </div>
+
+  <!-- Login form -->
+  <div id="view-login">
+    <div class="section-title">Sign in</div>
+
+    <!-- Google -->
+    <button class="btn btn-google" onclick="loginGoogle()">
+      <svg width="18" height="18" viewBox="0 0 48 48">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.96 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      </svg>
+      Continue with Google
+    </button>
+
+    <div class="divider">or sign in with email</div>
+
+    <!-- Email/password form — calls backend directly, NO redirect to port 3000 -->
+    <form onsubmit="loginPassword(event)">
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" placeholder="admin@example.com"
+               value="admin@example.com" required autocomplete="email" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="••••••••"
+               value="Admin123!@#" required autocomplete="current-password" />
+      </div>
+      <button id="btn-login" type="submit" class="btn btn-primary">
+        🔑 &nbsp;Sign in
+      </button>
+    </form>
+  </div>
+
+  <div id="loading">⏳ Signing in…</div>
+
+  <!-- Profile view -->
+  <div id="view-profile" style="display:none">
+    <div class="section-title">Signed in via SSO</div>
+    <div class="profile-box">
+      <div class="profile-header">
+        <div class="avatar" id="avatar-wrap">👤</div>
+        <div>
+          <div class="profile-name" id="profile-name">—</div>
+          <div class="profile-email" id="profile-email">—</div>
+          <div class="badge verified" id="badge-verified">✓ Email Verified</div>
+        </div>
+      </div>
+      <div class="token-box">
+        <div class="token-label">Access Token (JWT · RS256)</div>
+        <div class="token-value" id="token-preview">—</div>
+      </div>
+    </div>
+    <button class="btn btn-danger" onclick="logout()">↩ Sign Out</button>
+  </div>
+
+  <div id="error-box" class="alert alert-error" style="display:none"></div>
+</div>
+
+<script>
+  const SSO = 'http://localhost:8000';
+
+  /* ── Email + Password login (direct API — no redirect) ───────────────────── */
+  async function loginPassword(e) {
+    e.preventDefault();
+    showError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`${SSO}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email:    document.getElementById('email').value.trim(),
+          password: document.getElementById('password').value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || `Login failed (${res.status})`);
+
+      // Store tokens
+      localStorage.setItem('sso_access_token',  data.access_token);
+      localStorage.setItem('sso_refresh_token', data.refresh_token || '');
+
+      // Fetch userinfo with token
+      await loadProfile(data.access_token);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /* ── Google login — SSO does auth, returns tokens directly here ──────────── */
+  function loginGoogle() {
+    // Pass THIS page as redirect_uri so SSO sends tokens back here via hash
+    // instead of going to port 3000 SSO frontend
+    const returnUrl = location.origin + location.pathname;
+    window.location.href = `${SSO}/auth/google?redirect_uri=${encodeURIComponent(returnUrl)}`;
+  }
+
+  /* ── Load profile from /oauth/userinfo ───────────────────────────────────── */
+  async function loadProfile(token) {
+    const res = await fetch(`${SSO}/oauth/userinfo`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('Could not fetch profile');
+    const user = await res.json();
+    showProfile(user, token);
+  }
+
+  /* ── Restore existing session ────────────────────────────────────────────── */
+  async function restoreSession() {
+    const token = localStorage.getItem('sso_access_token');
+    if (!token) return;
+    try {
+      await loadProfile(token);
+    } catch {
+      localStorage.removeItem('sso_access_token');
+      localStorage.removeItem('sso_refresh_token');
+    }
+  }
+
+  /* ── Check for social-login return (access_token in URL hash) ────────────── */
+  function checkSocialReturn() {
+    const hash = new URLSearchParams(location.hash.replace('#', ''));
+    const token = hash.get('access_token');
+    if (!token) return false;
+    history.replaceState({}, '', location.pathname);
+    localStorage.setItem('sso_access_token', token);
+    localStorage.setItem('sso_refresh_token', hash.get('refresh_token') || '');
+    loadProfile(token);
+    return true;
+  }
+
+  /* ── Logout ──────────────────────────────────────────────────────────────── */
+  function logout() {
+    localStorage.removeItem('sso_access_token');
+    localStorage.removeItem('sso_refresh_token');
+    document.getElementById('view-profile').style.display = 'none';
+    document.getElementById('view-login').style.display   = 'block';
+  }
+
+  /* ── UI helpers ──────────────────────────────────────────────────────────── */
+  function showProfile(user, token) {
+    document.getElementById('view-login').style.display   = 'none';
+    document.getElementById('view-profile').style.display = 'block';
+    document.getElementById('loading').style.display      = 'none';
+
+    document.getElementById('profile-name').textContent  = user.name  || user.sub || '—';
+    document.getElementById('profile-email').textContent = user.email || '—';
+
+    const wrap = document.getElementById('avatar-wrap');
+    if (user.picture) {
+      wrap.innerHTML = `<img src="${user.picture}" alt="avatar">`;
+    } else {
+      wrap.textContent = (user.name || user.email || '?')[0].toUpperCase();
+    }
+
+    const badge = document.getElementById('badge-verified');
+    if (user.email_verified === false) {
+      badge.textContent = '⚠ Email Not Verified';
+      badge.className   = 'badge';
+    }
+
+    document.getElementById('token-preview').textContent = token.slice(0, 90) + '…';
+  }
+
+  function showError(msg) {
+    const box = document.getElementById('error-box');
+    if (msg) { box.textContent = '⚠ ' + msg; box.style.display = 'block'; }
+    else      { box.style.display = 'none'; }
+  }
+
+  function setLoading(show) {
+    document.getElementById('loading').style.display    = show ? 'block' : 'none';
+    document.getElementById('view-login').style.display = show ? 'none'  : 'block';
+    document.getElementById('btn-login').disabled = show;
+  }
+
+  /* ── Bootstrap ───────────────────────────────────────────────────────────── */
+  if (!checkSocialReturn()) {
+    restoreSession();
+  }
+</script>
+</body>
+</html>
