@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from dotenv import load_dotenv
 from app.db.session import async_session_factory
 from app.models.oauth_client import OAuthClient
@@ -7,34 +8,41 @@ from sqlalchemy import select
 
 load_dotenv()
 
-# THE FIX: We are forcing the production URL for your specific app ID
-PROD_DOMAIN = "https://wytnet.com"
-TARGET_CLIENT_ID = "client_XCCfrYINlTpyDqKD3b1Hsw" # From your error message
-TARGET_URI = f"{PROD_DOMAIN}/habit-tracking/dashboard.html"
+# Get production domain from .env
+PROD_DOMAIN = os.getenv("FRONTEND_URL", "https://wytnet.com").rstrip('/')
 
-async def force_fix_redirect():
+def create_slug(name):
+    # Convert "Project A" -> "project-a"
+    name = name.lower().strip()
+    name = re.sub(r'[^a-z0-9\s-]', '', name) # Remove special chars
+    name = re.sub(r'[\s-]+', '-', name)      # Replace spaces/hyphens with a single hyphen
+    return name
+
+async def fix_all_apps_dynamically():
     async with async_session_factory() as db:
-        # Find your specific app
-        res = await db.execute(select(OAuthClient).where(OAuthClient.client_id == TARGET_CLIENT_ID))
-        client = res.scalar_one_or_none()
+        res = await db.execute(select(OAuthClient))
+        clients = res.scalars().all()
         
-        if not client:
-            print(f"❌ Error: Could not find app with ID {TARGET_CLIENT_ID} in database.")
-            return
-
-        print(f"Found App: '{client.app_name}'")
+        print(f"--- Dynamically Authorizing {len(clients)} Apps for {PROD_DOMAIN} ---")
         
-        current_uris = list(client.redirect_uris) if client.redirect_uris else []
-        
-        if TARGET_URI not in current_uris:
-            current_uris.append(TARGET_URI)
-            client.redirect_uris = current_uris
-            await db.commit()
-            print(f"✅ SUCCESS: Authorized {TARGET_URI}")
-        else:
-            print(f"ℹ️ Already Authorized: {TARGET_URI}")
+        for client in clients:
+            if not client.app_name or client.client_id == "__internal__":
+                continue
+                
+            slug = create_slug(client.app_name)
+            prod_uri = f"{PROD_DOMAIN}/{slug}/dashboard.html"
             
-        print(f"\nAll allowed URIs for this app: {client.redirect_uris}")
+            current_uris = list(client.redirect_uris) if client.redirect_uris else []
+            
+            if prod_uri not in current_uris:
+                current_uris.append(prod_uri)
+                client.redirect_uris = current_uris
+                print(f"✅ Authorized: {prod_uri} (for '{client.app_name}')")
+            else:
+                print(f"ℹ️ Already OK: {prod_uri}")
+                
+        await db.commit()
+        print("\n✨ All apps in your database are now production-ready!")
 
 if __name__ == "__main__":
-    asyncio.run(force_fix_redirect())
+    asyncio.run(fix_all_apps_dynamically())
