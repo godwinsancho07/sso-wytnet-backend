@@ -22,7 +22,8 @@ export default function AppShell() {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    // Force redirect to the main login portal on :5173
+    window.location.href = 'http://localhost:5173';
   };
 
   const isSuperAdmin = roles.includes('super_admin');
