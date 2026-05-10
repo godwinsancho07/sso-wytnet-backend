@@ -22,8 +22,8 @@ export default function AppShell() {
 
   const handleLogout = async () => {
     await logout();
-    // Force redirect to the main login portal on :5173
-    window.location.href = 'http://localhost:5173';
+    // Force redirect to the production landing page
+    window.location.href = 'https://wytnet.com';
   };
 
   const isSuperAdmin = roles.includes('super_admin');
