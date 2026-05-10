@@ -156,11 +156,18 @@ class AuthService:
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
     ) -> Tuple[str, str, str]:
+        from app.permissions.checker import get_user_roles
+        roles = await get_user_roles(self.db, user)
+
         access_token_str = create_access_token(
             subject=user.id,
             scopes=scopes,
             client_id=client_id,
-            extra={"email": user.email},
+            extra={
+                "email": user.email,
+                "roles": roles,
+                "is_superuser": user.is_superuser
+            },
         )
         refresh_token_str = generate_token(48)
         session_token_str = generate_token(48)
@@ -244,11 +251,18 @@ class AuthService:
         # Rotate: revoke old, issue new
         await self.refresh_tokens.revoke(refresh_token)
 
+        from app.permissions.checker import get_user_roles
+        roles = await get_user_roles(self.db, user)
+
         new_access = create_access_token(
             subject=user.id,
             scopes=token_obj.scopes,
             client_id=token_obj.client_id,
-            extra={"email": user.email},
+            extra={
+                "email": user.email,
+                "roles": roles,
+                "is_superuser": user.is_superuser
+            },
         )
         new_refresh = generate_token(48)
 

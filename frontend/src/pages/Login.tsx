@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Shield, Zap } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
+import { storage } from '@/utils/storage';
 import Alert from '@/components/Alert';
 import SocialLoginButtons from '@/components/SocialLoginButtons';
 
@@ -18,7 +19,7 @@ type FormData = z.infer<typeof schema>;
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isLoading, error, clearError, primaryDashboard } = useAuthStore();
+  const { login, isLoading, error, clearError, primaryDashboard, isAuthenticated } = useAuthStore();
   const searchParams = new URLSearchParams(location.search);
   const nextUrl = searchParams.get('next');
   const from = (location.state as any)?.from?.pathname;
@@ -35,6 +36,23 @@ export default function Login() {
     }
     navigate(from || primaryDashboard(), { replace: true });
   };
+
+  useEffect(() => {
+    // 1. Check for token in URL first (highest priority)
+    const urlToken = searchParams.get('token');
+    if (urlToken) {
+      console.log('Detected sync token, initializing session...');
+      storage.setAccessToken(urlToken);
+      // Immediate reload to the dashboard to refresh all store states
+      window.location.href = '/admin/dashboard';
+      return;
+    }
+
+    // 2. Check for existing session
+    if (isAuthenticated) {
+      redirectAfterLogin();
+    }
+  }, [isAuthenticated, searchParams]);
 
   const onSubmit = async (data: FormData) => {
     try {
