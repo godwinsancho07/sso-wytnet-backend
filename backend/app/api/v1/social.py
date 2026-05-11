@@ -97,6 +97,9 @@ async def social_login_callback(
         )
 
     redirect = RedirectResponse(redirect_url)
+    # Prevent browser caching of the redirect containing tokens
+    redirect.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    
     redirect.set_cookie(
         key="session_token",
         value=session_token,

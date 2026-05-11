@@ -81,16 +81,36 @@ async def login(
 async def logout(
     request: Request,
     response: Response,
-    current_user: CurrentUser,
     db: DB,
     session_token: Annotated[Optional[str], Cookie()] = None,
 ) -> MessageResponse:
+    """Log out the current user by revoking their session and clearing cookies.
+    This endpoint does not require authentication so that users can log out even if their token is expired.
+    """
     if session_token:
-        service = AuthService(db)
-        await service.logout(session_token, current_user.id)
+        from app.repositories.session import SessionRepository
+        from app.repositories.audit_log import AuditLogRepository
+        
+        session_repo = SessionRepository(db)
+        session_obj = await session_repo.get_by_token(session_token)
+        
+        if session_obj:
+            await session_repo.revoke(session_token)
+            
+            # Log audit if possible
+            audit_repo = AuditLogRepository(db)
+            await audit_repo.log(
+                "auth.logout", 
+                user_id=session_obj.user_id,
+                ip_address=get_client_ip(request),
+                user_agent=request.headers.get("User-Agent")
+            )
+            await db.commit()
 
-    response.delete_cookie("session_token")
-    response.delete_cookie("access_token")
+    response.delete_cookie("session_token", path="/")
+    response.delete_cookie("access_token", path="/")
+    # Also set headers to prevent any caching of the logout response itself
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return MessageResponse(message="Logged out successfully")
 
 
@@ -149,14 +169,19 @@ async def change_password(
 
 
 @router.get("/me", response_model=UserRead)
-async def get_me(current_user: CurrentUser) -> UserRead:
+async def get_me(response: Response, current_user: CurrentUser) -> UserRead:
+    # Prevent browser caching of user identity
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     return UserRead.model_validate(current_user)
 
 
 @router.get("/me/permissions")
-async def get_my_permissions(current_user: CurrentUser, db: DB) -> dict:
+async def get_my_permissions(response: Response, current_user: CurrentUser, db: DB) -> dict:
     """Return roles + permissions + owned client IDs for the current user.
     Used by frontend to drive UI (which menu items, which dashboard, etc)."""
+    # Prevent browser caching of permissions
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    
     from app.permissions.checker import (
         get_user_permissions, get_user_roles, get_owned_client_ids, is_super_admin,
     )

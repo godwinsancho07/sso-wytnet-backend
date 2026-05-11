@@ -69,6 +69,19 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(AuditMiddleware)
 
+# Disable caching for all API GET requests to ensure fresh state across logins
+@app.middleware("http")
+async def add_no_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.method == "GET" and (
+        request.url.path.startswith("/v1/") or 
+        request.url.path.startswith("/auth/")
+    ) and not request.url.path.startswith(("/docs", "/redoc", "/health")):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
