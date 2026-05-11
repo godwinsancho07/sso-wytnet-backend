@@ -38,7 +38,9 @@ async def social_login_redirect(
     if redirect_uri:
         _client_redirect_store[state] = redirect_uri
 
-    return RedirectResponse(prov.get_authorization_url(state))
+    auth_url = prov.get_authorization_url(state)
+    print(f"DEBUG: Redirecting to Google with URL: {auth_url}")
+    return RedirectResponse(auth_url)
 
 
 @router.get("/{provider}/callback")
