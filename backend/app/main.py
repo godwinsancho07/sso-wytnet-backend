@@ -22,9 +22,32 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure RSA keys exist on startup
     from app.core.keys import _ensure_keys
     _ensure_keys(settings.private_key_path, settings.public_key_path)
+    
+    # Auto-fix client URLs to port 3000
+    try:
+        from app.db.session import async_session
+        from app.models.oauth_client import OAuthClient
+        from sqlalchemy import update
+        async with async_session() as db:
+            # Habit Tracking
+            await db.execute(
+                update(OAuthClient)
+                .where(OAuthClient.client_id == 'client_XCCfrYINlTpyDqKD3b1Hsw')
+                .values(redirect_uris=["http://localhost:3000/habit-tracking/dashboard.html"])
+            )
+            # Project A
+            await db.execute(
+                update(OAuthClient)
+                .where(OAuthClient.client_id == 'client_xRleoxpBuyHaFScBx2bFQA')
+                .values(redirect_uris=["http://localhost:3000/project-a/dashboard.html"])
+            )
+            await db.commit()
+            logger.info("Automatically updated client URLs to port 3000")
+    except Exception as e:
+        logger.error(f"Failed to auto-update client URLs: {e}")
+
     logger.info("SSO Identity Provider started")
     yield
     logger.info("SSO Identity Provider shutting down")

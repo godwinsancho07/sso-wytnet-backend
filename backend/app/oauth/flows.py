@@ -37,12 +37,17 @@ class OAuthFlowService:
             raise InvalidClientError()
 
         # Validate redirect_uri
-        # Special allowance for Project A's new folder structure
-        allowed_uris = client.redirect_uris
+        # Special allowance for port 3000 migration
+        allowed_uris = list(client.redirect_uris)
         if req.client_id == 'client_xRleoxpBuyHaFScBx2bFQA':
-            allowed_uris = list(allowed_uris) + [
-                "http://localhost:5173/project-a/dashboard.html",
-                "http://localhost:5173/project-a/index.html"
+            allowed_uris += [
+                "http://localhost:3000/project-a/dashboard.html",
+                "http://localhost:5173/project-a/dashboard.html"
+            ]
+        if req.client_id == 'client_XCCfrYINlTpyDqKD3b1Hsw':
+            allowed_uris += [
+                "http://localhost:3000/habit-tracking/dashboard.html",
+                "http://localhost:5173/habit-tracking/dashboard.html"
             ]
 
         if req.redirect_uri not in allowed_uris:

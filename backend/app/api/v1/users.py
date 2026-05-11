@@ -403,6 +403,7 @@ async def get_connected_apps(current_user: CurrentUser, db: DB) -> list:
 
     result = await db.execute(
         select(
+            OAuthClient.id,
             OAuthClient.client_id, 
             OAuthClient.app_name, 
             OAuthClient.redirect_uris,
@@ -417,6 +418,7 @@ async def get_connected_apps(current_user: CurrentUser, db: DB) -> list:
 
     return [
         {
+            "id": row.id,
             "client_id": row.client_id,
             "app_name": row.app_name,
             "url": row.redirect_uris[0] if row.redirect_uris else "#",
