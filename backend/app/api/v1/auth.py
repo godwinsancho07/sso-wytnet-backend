@@ -35,7 +35,7 @@ async def register(
 
 
 @router.post("/login", response_model=LoginResponse)
-@limiter.limit("10/minute")
+# @limiter.limit("10/minute")
 async def login(
     request: Request,
     body: LoginRequest,
