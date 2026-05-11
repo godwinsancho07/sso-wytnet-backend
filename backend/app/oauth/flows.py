@@ -42,12 +42,14 @@ class OAuthFlowService:
         if req.client_id == 'client_xRleoxpBuyHaFScBx2bFQA':
             allowed_uris += [
                 "http://localhost:3000/project-a/dashboard.html",
-                "http://localhost:5173/project-a/dashboard.html"
+                "http://localhost:5173/project-a/dashboard.html",
+                "https://wytnet.com/project-a/dashboard.html"
             ]
         if req.client_id == 'client_XCCfrYINlTpyDqKD3b1Hsw':
             allowed_uris += [
                 "http://localhost:3000/habit-tracking/dashboard.html",
-                "http://localhost:5173/habit-tracking/dashboard.html"
+                "http://localhost:5173/habit-tracking/dashboard.html",
+                "https://wytnet.com/habit-tracking/dashboard.html"
             ]
 
         if req.redirect_uri not in allowed_uris:

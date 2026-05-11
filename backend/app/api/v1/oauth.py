@@ -58,8 +58,10 @@ async def authorize(
     # If no token, redirect to login page
     if not raw_token:
         from app.config.settings import settings
-        # Ensure the 'next' URL points to the frontend (port 3000) so cookies are shared
-        next_url = str(request.url).replace(f"localhost:8000", f"localhost:3000")
+        # Ensure the 'next' URL points to the frontend so cookies are shared
+        backend_host = settings.backend_url.split("//")[-1].rstrip("/")
+        frontend_host = settings.frontend_url.split("//")[-1].rstrip("/")
+        next_url = str(request.url).replace(backend_host, frontend_host)
         login_url = f"{settings.frontend_url}/login?next={next_url}"
         return RedirectResponse(login_url)
 
@@ -67,7 +69,9 @@ async def authorize(
         payload = decode_access_token(raw_token)
     except JWTError:
         from app.config.settings import settings
-        next_url = str(request.url).replace(f"localhost:8000", f"localhost:3000")
+        backend_host = settings.backend_url.split("//")[-1].rstrip("/")
+        frontend_host = settings.frontend_url.split("//")[-1].rstrip("/")
+        next_url = str(request.url).replace(backend_host, frontend_host)
         login_url = f"{settings.frontend_url}/login?next={next_url}"
         return RedirectResponse(login_url)
 

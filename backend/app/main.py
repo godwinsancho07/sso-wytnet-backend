@@ -35,13 +35,13 @@ async def lifespan(app: FastAPI):
             await db.execute(
                 update(OAuthClient)
                 .where(OAuthClient.client_id == 'client_XCCfrYINlTpyDqKD3b1Hsw')
-                .values(redirect_uris=["http://localhost:3000/habit-tracking/dashboard.html"])
+                .values(redirect_uris=[f"{settings.frontend_url}/habit-tracking/dashboard.html"])
             )
             # Project A
             await db.execute(
                 update(OAuthClient)
                 .where(OAuthClient.client_id == 'client_xRleoxpBuyHaFScBx2bFQA')
-                .values(redirect_uris=["http://localhost:3000/project-a/dashboard.html"])
+                .values(redirect_uris=[f"{settings.frontend_url}/project-a/dashboard.html"])
             )
             await db.commit()
             logger.info("Automatically updated client URLs to port 3000")
