@@ -1,7 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 
 from app.api.deps import CurrentUser, DB
 from app.core.exceptions import PermissionDeniedError, AppException
@@ -11,6 +11,7 @@ from app.models.user import User
 from app.permissions import (
     require_permission, get_owned_client_ids, user_owns_client, is_super_admin,
 )
+from app.models.token import RefreshToken
 from app.repositories.oauth_client import OAuthClientRepository
 from app.repositories.user import UserRepository
 from app.schemas.oauth import (
@@ -22,6 +23,14 @@ from fastapi import status
 from fastapi.responses import PlainTextResponse, Response
 
 router = APIRouter(prefix="/clients", tags=["clients"])
+
+
+@router.get("/public", response_model=List[OAuthClientRead])
+async def list_public_clients(db: DB) -> List[OAuthClientRead]:
+    """Lists all active clients for the public landing page ecosystem."""
+    repo = OAuthClientRepository(db)
+    clients = await repo.list_active(offset=0, limit=50)
+    return [OAuthClientRead.model_validate(c) for c in clients]
 
 
 @router.post(
@@ -60,7 +69,21 @@ async def list_clients(
         # App admin: only the clients they own
         owned_ids = await get_owned_client_ids(db, current_user)
         clients = [c for c in await repo.list_active(offset=0, limit=1000) if c.id in owned_ids]
-    return [OAuthClientRead.model_validate(c) for c in clients]
+    
+    results = []
+    for c in clients:
+        stmt = select(User.email).join(ClientAdmin, ClientAdmin.user_id == User.id).where(ClientAdmin.client_id == c.id)
+        emails = (await db.execute(stmt)).scalars().all()
+        
+        # Calculate unique authorized users
+        user_count_stmt = select(func.count(func.distinct(RefreshToken.user_id))).where(RefreshToken.client_id == c.id, RefreshToken.is_revoked == False)
+        user_count = (await db.execute(user_count_stmt)).scalar() or 0
+        
+        dto = OAuthClientRead.model_validate(c)
+        dto.admin_emails = list(emails)
+        dto.user_count = user_count
+        results.append(dto)
+    return results
 
 
 @router.get(
@@ -77,7 +100,13 @@ async def get_client(
         raise PermissionDeniedError("client:read")
     service = ClientService(db)
     client = await service.get_client(client_id)
-    return OAuthClientRead.model_validate(client)
+    
+    stmt = select(User.email).join(ClientAdmin, ClientAdmin.user_id == User.id).where(ClientAdmin.client_id == client.id)
+    emails = (await db.execute(stmt)).scalars().all()
+    
+    dto = OAuthClientRead.model_validate(client)
+    dto.admin_emails = list(emails)
+    return dto
 
 
 @router.patch(
@@ -127,8 +156,13 @@ async def rotate_secret(
         raise PermissionDeniedError("client:rotate")
     service = ClientService(db)
     client, secret = await service.rotate_secret(client_id, actor_id=current_user.id)
+    
+    stmt = select(User.email).join(ClientAdmin, ClientAdmin.user_id == User.id).where(ClientAdmin.client_id == client.id)
+    emails = (await db.execute(stmt)).scalars().all()
+    
     result = OAuthClientRead.model_validate(client).model_dump()
     result["client_secret"] = secret
+    result["admin_emails"] = list(emails)
     return OAuthClientWithSecret(**result)
 
 

@@ -44,6 +44,12 @@ class ClientService:
             require_pkce=data.require_pkce,
         )
 
+        # 3. Add actor as initial admin
+        from app.models.client_admin import ClientAdmin
+        admin = ClientAdmin(user_id=actor_id, client_id=client.id)
+        self.session.add(admin)
+        await self.session.flush()
+
         # 4. audit log (no side-effects step for create)
         await self.audit.log(
             event_type="client.created",

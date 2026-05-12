@@ -44,12 +44,13 @@ class AuthService:
         if await self.users.get_by_email(data.email):
             raise UserAlreadyExistsError()
 
-        verification_token = generate_token(32)
+        # Auto-verify user on creation as requested
         user = await self.users.create_user(
             email=data.email,
             password_hash=hash_password(data.password),
             full_name=data.full_name,
-            email_verification_token=verification_token,
+            email_verified=True,
+            email_verification_token=None,
         )
 
         await self.audit.log(
@@ -57,13 +58,8 @@ class AuthService:
             user_id=user.id,
             ip_address=ip_address,
             user_agent=user_agent,
-            metadata={"email": user.email},
+            metadata={"email": user.email, "auto_verified": True},
         )
-
-        try:
-            await send_verification_email(user.email, user.full_name, verification_token)
-        except Exception:
-            logger.warning(f"Could not send verification email to {user.email}")
 
         return user
 

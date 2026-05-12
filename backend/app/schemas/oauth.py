@@ -87,6 +87,8 @@ class OAuthClientRead(BaseModel):
     is_confidential: bool
     require_pkce: bool
     created_at: datetime
+    admin_emails: List[str] = []
+    user_count: int = 0
 
 
 class OAuthClientPublic(BaseModel):

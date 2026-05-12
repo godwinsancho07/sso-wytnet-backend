@@ -100,6 +100,11 @@ async def audit_recent(
     ]
 
 
+@router.get("/me/admin/overview")
+async def my_admin_overview(current_user: CurrentUser, db: DB) -> dict:
+    return await MetricsService(db).admin_overview(current_user.id)
+
+
 # ── App Admin: per-client metrics ─────────────────────────────────────────────
 
 @router.get("/clients/{client_id}/metrics")

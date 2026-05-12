@@ -17,7 +17,7 @@ from app.repositories.social_account import SocialAccountRepository
 from app.repositories.token import AccessTokenRepository, RefreshTokenRepository
 from app.repositories.user import UserRepository
 from app.schemas.social import SocialAccountRead
-from app.schemas.user import UserRead, UserUpdate
+from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services.email import send_password_reset_email
 from app.services.user import UserService
 
@@ -64,6 +64,28 @@ async def unlink_social_account(
 
 # ── Admin-scoped user endpoints ─────────────────────────────────────────────
 
+@router.post(
+    "",
+    response_model=UserRead,
+    status_code=201,
+    dependencies=[Depends(require_permission("user:write"))],
+)
+async def create_user(
+    body: UserCreate,
+    current_user: CurrentUser,
+    request: Request,
+    db: DB,
+) -> UserRead:
+    service = UserService(db)
+    user = await service.create_user(
+        body,
+        actor_id=current_user.id,
+        ip_address=get_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return UserRead.model_validate(user)
+
+
 @router.get(
     "",
     dependencies=[Depends(require_permission("user:read"))],
@@ -72,6 +94,7 @@ async def list_users(
     db: DB,
     q: Optional[str] = Query(None, description="Search query"),
     status: Optional[str] = Query(None, description="active|suspended|unverified"),
+    role: Optional[str] = Query(None, description="Filter by role name"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ) -> dict:
@@ -83,23 +106,19 @@ async def list_users(
     auth_code_repo = AuthorizationCodeRepository(db)
 
     if q:
-        users = await user_repo.search(q, offset=offset, limit=limit)
+        users = await user_repo.search(q, offset=offset, limit=limit, status=status, role=role)
+        total_count = await user_repo.count_filtered(query=q, status=status, role=role)
     else:
-        users = await user_repo.list(offset=offset, limit=limit)
-
-    if status == "active":
-        users = [u for u in users if u.is_active]
-    elif status == "suspended":
-        users = [u for u in users if not u.is_active]
-    elif status == "unverified":
-        users = [u for u in users if not u.email_verified]
+        users = await user_repo.list_filtered(status=status, role=role, offset=offset, limit=limit)
+        total_count = await user_repo.count_filtered(status=status, role=role)
 
     items = []
     for u in users:
         roles = await role_repo.get_user_roles(u.id)
         socials = await social_repo.list_by_user(u.id)
         active_sessions = await session_repo.list_active_for_user(u.id)
-        connected_apps = await auth_code_repo.count_unique_clients_for_user(u.id)
+        connected_apps = await user_repo.count_connected_apps(u.id)
+        registered_apps = await user_repo.count_owned_apps(u.id)
         items.append({
             "id": u.id,
             "email": u.email,
@@ -114,13 +133,14 @@ async def list_users(
             "providers": [s.provider for s in socials],
             "active_sessions": len(active_sessions),
             "connected_apps": connected_apps,
+            "registered_apps": registered_apps,
         })
 
     return {
         "items": items,
         "offset": offset,
         "limit": limit,
-        "count": len(items),
+        "count": total_count,
     }
 
 
@@ -132,6 +152,30 @@ async def list_users(
 async def get_user(user_id: str, db: DB) -> UserRead:
     service = UserService(db)
     user = await service.get_by_id(user_id)
+    return UserRead.model_validate(user)
+
+
+@router.patch(
+    "/{user_id}",
+    response_model=UserRead,
+    dependencies=[Depends(require_permission("user:write"))],
+)
+async def admin_update_user(
+    user_id: str,
+    body: dict,
+    current_user: CurrentUser,
+    request: Request,
+    db: DB,
+) -> UserRead:
+    """Update any user field as an admin."""
+    service = UserService(db)
+    user = await service.admin_update_user(
+        user_id,
+        body,
+        actor_id=current_user.id,
+        ip_address=get_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return UserRead.model_validate(user)
 
 
@@ -397,33 +441,165 @@ async def delete_user(
 @router.get("/me/connected-apps")
 async def get_connected_apps(current_user: CurrentUser, db: DB) -> list:
     """Returns all apps the current user has authorized."""
-    from app.models.authorization_code import AuthorizationCode
+    from app.models.token import RefreshToken
     from app.models.oauth_client import OAuthClient
-    from sqlalchemy import select
+    from sqlalchemy import select, func
+    from datetime import datetime, timezone
 
-    result = await db.execute(
-        select(
-            OAuthClient.id,
-            OAuthClient.client_id, 
-            OAuthClient.app_name, 
-            OAuthClient.redirect_uris,
-            AuthorizationCode.scopes, 
-            AuthorizationCode.created_at
-        )
-        .join(OAuthClient, OAuthClient.id == AuthorizationCode.client_id)
-        .where(AuthorizationCode.user_id == current_user.id)
-        .distinct(OAuthClient.client_id)
+    from sqlalchemy import union_all
+    
+    # 1. Apps with tokens
+    stmt1 = (
+        select(OAuthClient.id)
+        .join(RefreshToken, OAuthClient.id == RefreshToken.client_id)
+        .where(RefreshToken.user_id == current_user.id, RefreshToken.is_revoked == False)
     )
-    rows = result.all()
+    
+    # 2. Apps with recent authorization codes (even if not exchanged yet)
+    from app.models.authorization_code import AuthorizationCode
+    stmt2 = (
+        select(OAuthClient.id)
+        .join(AuthorizationCode, OAuthClient.id == AuthorizationCode.client_id)
+        .where(AuthorizationCode.user_id == current_user.id)
+    )
+    
+    # Combine
+    combined_ids = select(union_all(stmt1, stmt2).alias("ids"))
+    
+    # Final query for full client details
+    stmt = (
+        select(OAuthClient)
+        .where(OAuthClient.id.in_(combined_ids), OAuthClient.is_active == True)
+        .order_by(OAuthClient.app_name)
+    )
+    
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
 
     return [
         {
             "id": row.id,
             "client_id": row.client_id,
             "app_name": row.app_name,
-            "url": row.redirect_uris[0] if row.redirect_uris else "#",
-            "scopes": row.scopes or [],
-            "last_used": row.created_at.isoformat() if row.created_at else None,
+            "logo_url": row.logo_url,
+            "redirect_uris": row.redirect_uris or [], # Add this
+            "last_used": datetime.now(timezone.utc).isoformat(),
+            "scopes": row.allowed_scopes or [],
         }
         for row in rows
     ]
+
+
+@router.get(
+    "/{user_id}/connected-apps",
+    dependencies=[Depends(require_permission("user:read"))],
+)
+async def admin_get_connected_apps(user_id: str, db: DB) -> list:
+    """Returns all apps the target user has authorized (Admin view)."""
+    from app.models.token import RefreshToken
+    from app.models.oauth_client import OAuthClient
+    from sqlalchemy import select, func
+    from datetime import datetime, timezone
+
+    from sqlalchemy import union_all
+    from app.models.authorization_code import AuthorizationCode
+    
+    # 1. Apps with tokens
+    stmt1 = (
+        select(OAuthClient.id)
+        .join(RefreshToken, OAuthClient.id == RefreshToken.client_id)
+        .where(RefreshToken.user_id == user_id, RefreshToken.is_revoked == False)
+    )
+    
+    # 2. Apps with recent authorization codes
+    stmt2 = (
+        select(OAuthClient.id)
+        .join(AuthorizationCode, OAuthClient.id == AuthorizationCode.client_id)
+        .where(AuthorizationCode.user_id == user_id)
+    )
+    
+    combined_ids = select(union_all(stmt1, stmt2).alias("ids"))
+    
+    stmt = (
+        select(OAuthClient)
+        .where(OAuthClient.id.in_(combined_ids), OAuthClient.is_active == True)
+        .order_by(OAuthClient.app_name)
+    )
+    
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    return [
+        {
+            "id": row.id,
+            "client_id": row.client_id,
+            "app_name": row.app_name,
+            "logo_url": row.logo_url,
+            "redirect_uris": row.redirect_uris or [],
+            "last_used": datetime.now(timezone.utc).isoformat(),
+            "scopes": row.allowed_scopes or [],
+        }
+        for row in rows
+    ]
+@router.post("/me/fix-standard-apps")
+async def fix_standard_apps(current_user: CurrentUser, db: DB):
+    from app.models.oauth_client import OAuthClient
+    from app.models.client_admin import ClientAdmin
+    from app.models.token import RefreshToken, AccessToken
+    from app.models.authorization_code import AuthorizationCode
+    from sqlalchemy import select, delete
+    from datetime import datetime, timezone, timedelta
+    
+    # 1. CLEANUP: For ALL apps where I am an admin, I should NOT be a user.
+    # This addresses "Afi cannot be a user for Portfolio or any app he registered"
+    admin_apps_stmt = select(ClientAdmin.client_id).where(ClientAdmin.user_id == current_user.id)
+    admin_apps_res = await db.execute(admin_apps_stmt)
+    managed_client_ids = [row[0] for row in admin_apps_res.all()]
+    
+    if managed_client_ids:
+        rt_del = delete(RefreshToken).where(RefreshToken.user_id == current_user.id, RefreshToken.client_id.in_(managed_client_ids))
+        at_del = delete(AccessToken).where(AccessToken.user_id == current_user.id, AccessToken.client_id.in_(managed_client_ids))
+        ac_del = delete(AuthorizationCode).where(AuthorizationCode.user_id == current_user.id, AuthorizationCode.client_id.in_(managed_client_ids))
+        
+        await db.execute(rt_del)
+        await db.execute(at_del)
+        await db.execute(ac_del)
+
+    # 2. AUTO-CONNECT: Ensure non-admins are connected to standard platform apps
+    # Target client IDs from user requests (Open Madurai, Vote smart AI)
+    standard_ids = ["client_l9Yb6R4F979weX19T7-xXg", "client_Op_NU6V_ltuKC7OfnL4KGg"]
+    user_fixed = []
+    
+    for tid in standard_ids:
+        # Check if user is an admin of this specific standard app
+        if tid in managed_client_ids:
+            continue # Admins don't get auto-connected as users
+            
+        stmt = select(OAuthClient).where(OAuthClient.client_id == tid)
+        res = await db.execute(stmt)
+        client = res.scalar_one_or_none()
+        
+        if not client:
+            continue
+            
+        # Ensure they ARE a user (auto-authorize)
+        check_rt = select(RefreshToken).where(RefreshToken.user_id == current_user.id, RefreshToken.client_id == client.id)
+        rt_res = await db.execute(check_rt)
+        if not rt_res.scalar_one_or_none():
+            new_token = RefreshToken(
+                user_id=current_user.id,
+                client_id=client.id,
+                token=f"auto_fix_{current_user.id[:8]}_{client.id[:8]}",
+                scopes=["openid", "profile", "email"],
+                expires_at=datetime.now(timezone.utc) + timedelta(days=3650),
+            )
+            db.add(new_token)
+            user_fixed.append(client.app_name)
+    
+    await db.commit()
+    
+    return {
+        "managed_apps_count": len(managed_client_ids),
+        "auto_connected": user_fixed,
+        "status": "synchronized"
+    }

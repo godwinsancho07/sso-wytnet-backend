@@ -30,9 +30,20 @@ PROTECTED_ROLE_NAMES = {"super_admin", "app_admin", "user"}
     status_code=201,
     dependencies=[Depends(require_permission("role:create"))],
 )
-async def create_role(body: RoleCreate, db: DB) -> RoleRead:
+async def create_role(
+    body: RoleCreate, 
+    request: Request,
+    current_user: CurrentUser,
+    db: DB
+) -> RoleRead:
     service = RBACService(db)
-    role = await service.create_role(body.name, body.description or "")
+    role = await service.create_role(
+        name=body.name, 
+        description=body.description or "",
+        actor_id=current_user.id,
+        ip_address=get_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return RoleRead.model_validate(role)
 
 
@@ -51,9 +62,20 @@ async def list_roles(db: DB) -> List[RoleRead]:
     "/assign",
     dependencies=[Depends(require_permission("role:assign"))],
 )
-async def assign_role(body: AssignRoleRequest, db: DB) -> dict:
+async def assign_role(
+    body: AssignRoleRequest, 
+    request: Request,
+    current_user: CurrentUser,
+    db: DB
+) -> dict:
     service = RBACService(db)
-    await service.assign_role(body.user_id, body.role_id)
+    await service.assign_role(
+        user_id=body.user_id, 
+        role_id=body.role_id,
+        actor_id=current_user.id,
+        ip_address=get_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"assigned": True}
 
 
@@ -61,9 +83,20 @@ async def assign_role(body: AssignRoleRequest, db: DB) -> dict:
     "/remove",
     dependencies=[Depends(require_permission("role:assign"))],
 )
-async def remove_role(body: RemoveRoleRequest, db: DB) -> dict:
+async def remove_role(
+    body: RemoveRoleRequest, 
+    request: Request,
+    current_user: CurrentUser,
+    db: DB
+) -> dict:
     service = RBACService(db)
-    await service.remove_role(body.user_id, body.role_id)
+    await service.remove_role(
+        user_id=body.user_id, 
+        role_id=body.role_id,
+        actor_id=current_user.id,
+        ip_address=get_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"removed": True}
 
 

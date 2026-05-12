@@ -458,6 +458,67 @@ class MetricsService:
             for cid, client_id, name, logo, auth, tcount in r.all()
         ]
 
+    async def admin_overview(self, user_id: str) -> Dict[str, Any]:
+        """Global metrics for an App Admin (summed over all their owned apps)."""
+        from app.models.client_admin import ClientAdmin
+        now = datetime.now(timezone.utc)
+        last_24h = now - timedelta(hours=24)
+        last_7d = now - timedelta(days=7)
+
+        # Get owned client IDs
+        stmt = select(ClientAdmin.client_id).where(ClientAdmin.user_id == user_id)
+        owned_ids = (await self.db.execute(stmt)).scalars().all()
+        
+        if not owned_ids:
+            return {
+                "total_apps": 0,
+                "total_users": 0,
+                "active_tokens": 0,
+                "tokens_24h": 0,
+                "tokens_7d": 0,
+                "generated_at": now.isoformat(),
+            }
+
+        total_apps = len(owned_ids)
+        
+        # Total unique authorized users across all apps
+        stmt = (
+            select(func.count(func.distinct(RefreshToken.user_id)))
+            .where(
+                RefreshToken.client_id.in_(owned_ids),
+                RefreshToken.is_revoked == False,
+            )
+        )
+        total_users = (await self.db.execute(stmt)).scalar_one() or 0
+        
+        active_tokens = await self._count(
+            AccessToken,
+            AccessToken.client_id.in_(owned_ids),
+            AccessToken.is_revoked == False,
+            AccessToken.expires_at > now,
+        )
+        
+        tokens_24h = await self._count(
+            AccessToken,
+            AccessToken.client_id.in_(owned_ids),
+            AccessToken.created_at >= last_24h,
+        )
+        
+        tokens_7d = await self._count(
+            AccessToken,
+            AccessToken.client_id.in_(owned_ids),
+            AccessToken.created_at >= last_7d,
+        )
+        
+        return {
+            "total_apps": total_apps,
+            "total_users": total_users,
+            "active_tokens": active_tokens,
+            "tokens_24h": tokens_24h,
+            "tokens_7d": tokens_7d,
+            "generated_at": now.isoformat(),
+        }
+
     async def _count(self, model, *filters) -> int:
         stmt = select(func.count()).select_from(model)
         for f in filters:

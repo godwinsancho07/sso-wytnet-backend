@@ -121,7 +121,7 @@ def require_permission(permission: str):
     """
     async def _dep(user: CurrentUser, db: DB) -> User:
         perms = await get_user_permissions(db, user)
-        if permission not in perms:
+        if not user.is_superuser and permission not in perms:
             raise PermissionDeniedError(permission)
         return user
     return _dep
@@ -130,7 +130,7 @@ def require_permission(permission: str):
 def require_any_permission(*permissions: str):
     async def _dep(user: CurrentUser, db: DB) -> User:
         owned = await get_user_permissions(db, user)
-        if not any(p in owned for p in permissions):
+        if not user.is_superuser and not any(p in owned for p in permissions):
             raise PermissionDeniedError(" or ".join(permissions))
         return user
     return _dep

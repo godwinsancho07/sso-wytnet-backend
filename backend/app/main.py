@@ -1,4 +1,6 @@
+# Triggering reload to sync permissions
 import logging
+from datetime import datetime
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -25,28 +27,93 @@ async def lifespan(app: FastAPI):
     from app.core.keys import _ensure_keys
     _ensure_keys(settings.private_key_path, settings.public_key_path)
     
-    # Auto-fix client URLs to port 3000
+    # Auto-fix permissions
     try:
-        from app.db.session import async_session
-        from app.models.oauth_client import OAuthClient
-        from sqlalchemy import update
-        async with async_session() as db:
-            # Habit Tracking
-            await db.execute(
-                update(OAuthClient)
-                .where(OAuthClient.client_id == 'client_XCCfrYINlTpyDqKD3b1Hsw')
-                .values(redirect_uris=[f"{settings.frontend_url}/habit-tracking/dashboard.html"])
-            )
-            # Project A
-            await db.execute(
-                update(OAuthClient)
-                .where(OAuthClient.client_id == 'client_xRleoxpBuyHaFScBx2bFQA')
-                .values(redirect_uris=[f"{settings.frontend_url}/project-a/dashboard.html"])
-            )
-            await db.commit()
-            logger.info("Automatically updated client URLs to port 3000")
+        from app.db.session import async_session_factory
+        from app.models.role import Permission, Role, RolePermission, UserRole
+        from app.models.user import User
+        from sqlalchemy import select
+
+        async with async_session_factory() as db:
+            # Create a debug file to confirm execution
+            with open("c:\\Users\\Ayisha\\Music\\sso wytnet2\\backend\\scratch\\seed_log.txt", "w") as f:
+                f.write(f"Seed started at {datetime.now()}\n")
+                
+                # 1. Define required permissions
+                required_perms = [
+                    ("user:read", "User Management", "read"),
+                    ("user:write", "User Management", "write"),
+                    ("user:suspend", "User Management", "suspend"),
+                    ("user:delete", "User Management", "delete"),
+                    ("role:read", "Role Management", "read"),
+                    ("role:create", "Role Management", "create"),
+                    ("role:assign", "Role Management", "assign"),
+                    ("client:read", "Client Management", "read"),
+                    ("client:create", "Client Management", "create"),
+                    ("client:edit", "Client Management", "write"),
+                    ("client:delete", "Client Management", "delete"),
+                ]
+
+                # 2. Ensure permissions exist
+                for name, res, act in required_perms:
+                    result = await db.execute(select(Permission).where(Permission.name == name))
+                    if not result.scalar_one_or_none():
+                        db.add(Permission(name=name, resource=res, action=act, description=f"Ability to {act} {res}"))
+                        f.write(f"Seeded permission: {name}\n")
+                await db.flush()
+
+                # 3. Ensure super_admin role exists and has all permissions
+                result = await db.execute(select(Role).where(Role.name == "super_admin"))
+                super_role = result.scalar_one_or_none()
+                if not super_role:
+                    super_role = Role(name="super_admin", description="Platform Super Administrator")
+                    db.add(super_role)
+                    await db.flush()
+                    f.write("Created super_admin role\n")
+
+                all_perms = await db.execute(select(Permission))
+                for p in all_perms.scalars().all():
+                    rp_result = await db.execute(
+                        select(RolePermission).where(
+                            RolePermission.role_id == super_role.id,
+                            RolePermission.permission_id == p.id
+                        )
+                    )
+                    if not rp_result.scalar_one_or_none():
+                        db.add(RolePermission(role_id=super_role.id, permission_id=p.id))
+                        f.write(f"Granted {p.name} to super_admin\n")
+
+                # 4. Ensure admin users are superusers
+                admin_emails = ["admin@example.com", "ayshadhee@gmail.com"] # Adding common admin emails
+                for email in admin_emails:
+                    result = await db.execute(select(User).where(User.email == email))
+                    admin_user = result.scalar_one_or_none()
+                    if admin_user:
+                        admin_user.is_superuser = True
+                        ur_result = await db.execute(
+                            select(UserRole).where(
+                                UserRole.user_id == admin_user.id,
+                                UserRole.role_id == super_role.id
+                            )
+                        )
+                        if not ur_result.scalar_one_or_none():
+                            db.add(UserRole(user_id=admin_user.id, role_id=super_role.id))
+                            f.write(f"Assigned super_admin role to {email}\n")
+                
+                # 5. Ensure 'readonly' role is removed (as requested)
+                result = await db.execute(select(Role).where(Role.name == "readonly"))
+                readonly_role = result.scalar_one_or_none()
+                if readonly_role:
+                    from sqlalchemy import delete
+                    await db.execute(delete(Role).where(Role.id == readonly_role.id))
+                    f.write("Deleted 'readonly' role\n")
+                
+                await db.commit()
+                f.write("Successfully synced permissions and roles\n")
     except Exception as e:
-        logger.error(f"Failed to auto-update client URLs: {e}")
+        logger.error(f"Failed to sync permissions: {e}")
+        with open("c:\\Users\\Ayisha\\Music\\sso wytnet2\\backend\\scratch\\seed_log.txt", "a") as f:
+            f.write(f"ERROR: {e}\n")
 
     logger.info("SSO Identity Provider started")
     yield
