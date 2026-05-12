@@ -8,7 +8,19 @@ from app.config import settings
 from app.models.oauth_client import OAuthClient
 
 
-_DOCS_PATH = Path(__file__).resolve().parents[3] / "docs" / "INTEGRATION.md"
+# Multiple possible paths for the template (Docker vs Local Dev)
+_POSSIBLE_PATHS = [
+    Path(__file__).resolve().parent.parent / "assets" / "INTEGRATION.md",  # app/assets/INTEGRATION.md
+    Path(__file__).resolve().parents[3] / "docs" / "INTEGRATION.md",      # root/docs/INTEGRATION.md
+]
+
+def _get_docs_path() -> Path:
+    for p in _POSSIBLE_PATHS:
+        if p.exists():
+            return p
+    return _POSSIBLE_PATHS[0] # Fallback to first one even if missing (will throw error later)
+
+_DOCS_PATH = _get_docs_path()
 
 
 async def render_for_client(
