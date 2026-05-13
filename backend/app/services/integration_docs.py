@@ -44,11 +44,25 @@ async def render_for_client(
 
     secret_value = client_secret or "<rotate-secret-to-get-new-value>"
 
+    # Process Next.js specific placeholders if needed
+    uris_list = "\n".join([f"  - `{u}`" for u in client.redirect_uris])
+    
+    base_urls = list(set([u.split("/api/auth/callback/")[0] for u in client.redirect_uris]))
+    if not base_urls:
+        base_urls = ["http://localhost:3000"]
+    
+    if len(base_urls) > 1:
+        nextauth_url_str = "\n".join([f"# Option {i+1}: {u.startswith('https') and 'Production' or 'Development'}\nNEXTAUTH_URL={u}" for i, u in enumerate(base_urls)])
+    else:
+        nextauth_url_str = f"NEXTAUTH_URL={base_urls[0]}"
+
     return (
         template
         .replace("__CLIENT_ID__", client.client_id)
         .replace("__CLIENT_SECRET__", secret_value)
         .replace("__REDIRECT_URI__", redirect_uri)
+        .replace("__REDIRECT_URIS_LIST__", uris_list)
+        .replace("__NEXTAUTH_URL__", nextauth_url_str)
         .replace("__BACKEND_URL__", backend_url)
         .replace("__APP_NAME__", client.app_name)
     )

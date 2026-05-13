@@ -29,7 +29,7 @@ A super_admin creates an OAuth client for your Next.js app via the SSO Admin Pan
 **Client Details:**
 - **App Name:** `__APP_NAME__`
 - **Redirect URIs:** 
-  - `__REDIRECT_URI__`
+__REDIRECT_URIS_LIST__
 - **Allowed Scopes:** `openid`, `profile`, `email`, `offline_access`
 - **Is Confidential:** `true` (for Next.js/NextAuth)
 - **Require PKCE:** `true`
@@ -69,14 +69,14 @@ npm install next-auth
 ```
 
 ### 4.1.1 Local SSL (Required for HTTPS)
-Since WytPass requires `https` redirect URIs, you must run your local server with SSL:
+If you are using `https` for local development (recommended for WytPass), run:
 ```bash
 npx next dev --experimental-https
 ```
 
 ### 4.2 Environment Variables (`.env.local`)
 ```env
-NEXTAUTH_URL=https://localhost:3000
+__NEXTAUTH_URL__
 NEXTAUTH_SECRET=p68V0m7vX1iQ9uY2zR4s5tW3xY1zZ8aB
 WYTPASS_CLIENT_ID=__CLIENT_ID__
 WYTPASS_CLIENT_SECRET=__CLIENT_SECRET__
