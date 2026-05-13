@@ -68,9 +68,15 @@ This is the verified configuration for integrating with Next.js.
 npm install next-auth
 ```
 
+### 4.1.1 Local SSL (Required for HTTPS)
+Since WytPass requires `https` redirect URIs, you must run your local server with SSL:
+```bash
+npx next dev --experimental-https
+```
+
 ### 4.2 Environment Variables (`.env.local`)
 ```env
-NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_URL=https://localhost:3000
 NEXTAUTH_SECRET=p68V0m7vX1iQ9uY2zR4s5tW3xY1zZ8aB
 WYTPASS_CLIENT_ID=__CLIENT_ID__
 WYTPASS_CLIENT_SECRET=__CLIENT_SECRET__
