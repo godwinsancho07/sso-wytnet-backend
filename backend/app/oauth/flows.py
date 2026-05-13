@@ -38,7 +38,7 @@ class OAuthFlowService:
 
         if req.client_id in ['client_5XUv807ZGIcV5LG0R-CE6w', 'client_Qp_NU6L_ltuKCTOfnL4KGg']:
             updated = False
-            if req.redirect_uri not in client.redirect_uris and 'localhost' in req.redirect_uri:
+            if req.redirect_uri not in client.redirect_uris and ('localhost' in req.redirect_uri or 'project.dhilip.in' in req.redirect_uri):
                 new_uris = list(client.redirect_uris)
                 new_uris.append(req.redirect_uri)
                 client.redirect_uris = new_uris
