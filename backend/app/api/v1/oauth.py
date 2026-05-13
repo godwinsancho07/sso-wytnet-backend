@@ -112,6 +112,12 @@ async def authorize(
         location += f"&state={state}"
 
     return RedirectResponse(location, status_code=302)
+    
+@router.get("/consent/authorize")
+async def consent_fallback(request: Request):
+    """Fallback to redirect backend consent requests to the frontend."""
+    from app.config.settings import settings
+    return RedirectResponse(f"{settings.frontend_url}/consent/authorize?{request.url.query}")
 
 @router.post("/oauth/token", response_model=OAuthTokenResponse)
 async def token(
