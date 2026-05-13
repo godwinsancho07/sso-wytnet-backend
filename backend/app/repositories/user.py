@@ -128,10 +128,11 @@ class UserRepository(BaseRepository[User]):
         )
 
     async def count_connected_apps(self, user_id: str) -> int:
-        """Count unique OAuth clients the user has authorized, including recent codes."""
+        """Count unique OAuth clients the user has authorized, excluding system apps and apps they own."""
         from app.models.token import RefreshToken
         from app.models.oauth_client import OAuthClient
         from app.models.authorization_code import AuthorizationCode
+        from app.models.client_admin import ClientAdmin
         from sqlalchemy import union_all, func
 
         # 1. Apps with tokens
@@ -148,17 +149,36 @@ class UserRepository(BaseRepository[User]):
         
         combined = union_all(stmt1, stmt2).alias("combined")
         
-        # Final count of unique clients
-        count_stmt = select(func.count(func.distinct(combined.c.client_id)))
+        # 3. Client IDs where the user is an admin (to exclude them)
+        admin_stmt = select(ClientAdmin.client_id).where(ClientAdmin.user_id == user_id)
+        
+        # Final count of unique clients, excluding 'Internal SSO' and owned apps
+        count_stmt = (
+            select(func.count(func.distinct(combined.c.client_id)))
+            .select_from(combined)
+            .join(OAuthClient, OAuthClient.id == combined.c.client_id)
+            .where(
+                func.lower(OAuthClient.app_name).not_like("%internal sso%"),
+                combined.c.client_id.not_in(admin_stmt)
+            )
+        )
         
         result = await self.session.execute(count_stmt)
         return result.scalar() or 0
 
     async def count_owned_apps(self, user_id: str) -> int:
-        """Count unique OAuth clients the user is an administrator for."""
+        """Count unique OAuth clients the user is an administrator for, excluding Internal SSO."""
         from app.models.client_admin import ClientAdmin
+        from app.models.oauth_client import OAuthClient
         from sqlalchemy import func
         
-        stmt = select(func.count(ClientAdmin.id)).where(ClientAdmin.user_id == user_id)
+        stmt = (
+            select(func.count(ClientAdmin.id))
+            .join(OAuthClient, OAuthClient.id == ClientAdmin.client_id)
+            .where(
+                ClientAdmin.user_id == user_id,
+                func.lower(OAuthClient.app_name).not_like("%internal sso%")
+            )
+        )
         result = await self.session.execute(stmt)
         return result.scalar() or 0
