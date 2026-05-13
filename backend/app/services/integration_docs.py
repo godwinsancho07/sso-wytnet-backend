@@ -21,6 +21,7 @@ def _get_docs_path() -> Path:
     return _POSSIBLE_PATHS[0] # Fallback to first one even if missing (will throw error later)
 
 _DOCS_PATH = _get_docs_path()
+_NEXTJS_DOCS_PATH = _DOCS_PATH.parent / "NEXTJS_INTEGRATION.md"
 
 
 async def render_for_client(
@@ -32,7 +33,11 @@ async def render_for_client(
     Pass `client_secret` only at create-time — it's not stored, so subsequent
     downloads omit the secret and tell the user to rotate if lost.
     """
-    template = _DOCS_PATH.read_text(encoding="utf-8")
+    # Detect if this is a Next.js project using NextAuth
+    is_nextjs = any("/api/auth/callback/" in uri for uri in client.redirect_uris)
+    
+    docs_path = _NEXTJS_DOCS_PATH if (is_nextjs and _NEXTJS_DOCS_PATH.exists()) else _DOCS_PATH
+    template = docs_path.read_text(encoding="utf-8")
 
     redirect_uri = client.redirect_uris[0] if client.redirect_uris else "https://yourapp.com/callback"
     backend_url = settings.backend_url.rstrip("/")
@@ -45,4 +50,5 @@ async def render_for_client(
         .replace("__CLIENT_SECRET__", secret_value)
         .replace("__REDIRECT_URI__", redirect_uri)
         .replace("__BACKEND_URL__", backend_url)
+        .replace("__APP_NAME__", client.app_name)
     )
