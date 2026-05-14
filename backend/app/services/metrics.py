@@ -123,7 +123,7 @@ class MetricsService:
         )
 
         # ── OAuth KPIs ───────────────────────────────────────────────────────
-        total_clients    = await self._count(OAuthClient)
+        total_clients    = await self._count(OAuthClient, OAuthClient.is_active == True)
         active_clients   = await self._count(OAuthClient, OAuthClient.is_active == True)
         disabled_clients = await self._count(OAuthClient, OAuthClient.is_active == False)
 
@@ -322,7 +322,10 @@ class MetricsService:
                 func.count(AccessToken.id).label("tokens"),
             )
             .join(AccessToken, AccessToken.client_id == OAuthClient.id, isouter=True)
-            .where((AccessToken.created_at >= last_7d) | (AccessToken.id.is_(None)))
+            .where(
+                OAuthClient.is_active == True,
+                (AccessToken.created_at >= last_7d) | (AccessToken.id.is_(None))
+            )
             .group_by(OAuthClient.id, OAuthClient.app_name, OAuthClient.client_id)
             .order_by(func.count(AccessToken.id).desc())
             .limit(limit)
@@ -465,8 +468,16 @@ class MetricsService:
         last_24h = now - timedelta(hours=24)
         last_7d = now - timedelta(days=7)
 
-        # Get owned client IDs
-        stmt = select(ClientAdmin.client_id).where(ClientAdmin.user_id == user_id)
+        # Get owned client IDs (active only, excluding Internal SSO)
+        stmt = (
+            select(ClientAdmin.client_id)
+            .join(OAuthClient, ClientAdmin.client_id == OAuthClient.id)
+            .where(
+                ClientAdmin.user_id == user_id,
+                OAuthClient.is_active == True,
+                func.lower(OAuthClient.app_name).not_like("%internal sso%")
+            )
+        )
         owned_ids = (await self.db.execute(stmt)).scalars().all()
         
         if not owned_ids:

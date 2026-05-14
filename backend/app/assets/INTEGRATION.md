@@ -144,6 +144,49 @@ async function signIn() {
 }
 ```
 
+### 4.3 Standard WytPass Button (Recommended)
+Use this official button format for a premium, consistent user experience.
+
+```tsx
+const WytPassButton = ({ onClick }: { onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      backgroundColor: '#ffffff',
+      color: '#1f2937',
+      padding: '10px 24px',
+      borderRadius: '12px',
+      border: '1px solid #e5e7eb',
+      fontWeight: '600',
+      fontSize: '15px',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+      fontFamily: 'inherit'
+    }}
+    onMouseOver={(e) => {
+      e.currentTarget.style.backgroundColor = '#f9fafb';
+      e.currentTarget.style.borderColor = '#d1d5db';
+    }}
+    onMouseOut={(e) => {
+      e.currentTarget.style.backgroundColor = '#ffffff';
+      e.currentTarget.style.borderColor = '#e5e7eb';
+    }}
+  >
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 8L7 17" stroke="#4285F4" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M7 17L10 10" stroke="#EA4335" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M10 10L13 17" stroke="#FBBC05" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M13 17L16 8" stroke="#34A853" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+    <span>Sign in with WytPass</span>
+  </button>
+);
+```
+
 ### 4.3 Handle the callback
 
 ```js

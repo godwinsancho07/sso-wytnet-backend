@@ -158,6 +158,7 @@ class UserRepository(BaseRepository[User]):
             .select_from(combined)
             .join(OAuthClient, OAuthClient.id == combined.c.client_id)
             .where(
+                OAuthClient.is_active == True,
                 func.lower(OAuthClient.app_name).not_like("%internal sso%"),
                 combined.c.client_id.not_in(admin_stmt)
             )
@@ -177,6 +178,7 @@ class UserRepository(BaseRepository[User]):
             .join(OAuthClient, OAuthClient.id == ClientAdmin.client_id)
             .where(
                 ClientAdmin.user_id == user_id,
+                OAuthClient.is_active == True,
                 func.lower(OAuthClient.app_name).not_like("%internal sso%")
             )
         )
