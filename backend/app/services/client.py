@@ -44,10 +44,16 @@ class ClientService:
             require_pkce=data.require_pkce,
         )
 
-        # 3. Add actor as initial admin
+        # 3. Add admins
         from app.models.client_admin import ClientAdmin
-        admin = ClientAdmin(user_id=actor_id, client_id=client.id)
-        self.session.add(admin)
+        
+        # Always add the creator
+        self.session.add(ClientAdmin(user_id=actor_id, client_id=client.id))
+        
+        # Add specified admin if different
+        if data.initial_admin_id and data.initial_admin_id != actor_id:
+            self.session.add(ClientAdmin(user_id=data.initial_admin_id, client_id=client.id))
+            
         await self.session.flush()
 
         # 4. audit log (no side-effects step for create)

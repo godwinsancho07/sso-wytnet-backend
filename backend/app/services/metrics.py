@@ -386,29 +386,112 @@ class MetricsService:
             "generated_at": now.isoformat(),
         }
 
-    async def app_recent_users(self, client_db_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    async def app_users_paginated(
+        self, 
+        client_db_id: str, 
+        offset: int = 0, 
+        limit: int = 20,
+        query: str | None = None
+    ) -> Dict[str, Any]:
+        from app.models.app_ban import AppBan
+        from sqlalchemy import case, or_
+
+        # Source of truth for "App Users" is the RefreshToken (authorized state)
+        # We left join AccessToken to get the "last seen" timestamp.
         stmt = (
             select(
-                User.id, User.email, User.full_name, User.avatar_url,
+                User.id, 
+                User.email, 
+                User.full_name, 
+                User.avatar_url,
                 func.max(AccessToken.created_at).label("last_seen"),
+                case(
+                    (AppBan.id.isnot(None), True),
+                    else_=False
+                ).label("is_banned")
             )
-            .join(AccessToken, AccessToken.user_id == User.id)
-            .where(AccessToken.client_id == client_db_id)
-            .group_by(User.id, User.email, User.full_name, User.avatar_url)
-            .order_by(func.max(AccessToken.created_at).desc())
-            .limit(limit)
+            .join(RefreshToken, RefreshToken.user_id == User.id)
+            .outerjoin(AccessToken, and_(
+                AccessToken.user_id == User.id, 
+                AccessToken.client_id == client_db_id
+            ))
+            .outerjoin(AppBan, and_(
+                AppBan.user_id == User.id, 
+                AppBan.client_id == client_db_id
+            ))
+            .where(
+                RefreshToken.client_id == client_db_id,
+                or_(
+                    RefreshToken.is_revoked == False,
+                    AppBan.id.isnot(None)
+                )
+            )
         )
-        r = await self.db.execute(stmt)
-        return [
-            {
+
+        if query:
+            stmt = stmt.where(
+                (User.email.ilike(f"%{query}%")) | 
+                (User.full_name.ilike(f"%{query}%"))
+            )
+
+        # Group by all non-aggregated columns
+        stmt = stmt.group_by(User.id, User.email, User.full_name, User.avatar_url, AppBan.id)
+        
+        # Count total using a subquery of unique user IDs
+        count_stmt = (
+            select(func.count(func.distinct(User.id)))
+            .join(RefreshToken, RefreshToken.user_id == User.id)
+            .outerjoin(AppBan, and_(
+                AppBan.user_id == User.id, 
+                AppBan.client_id == client_db_id
+            ))
+            .where(
+                RefreshToken.client_id == client_db_id,
+                or_(
+                    RefreshToken.is_revoked == False,
+                    AppBan.id.isnot(None)
+                )
+            )
+        )
+        if query:
+            count_stmt = count_stmt.where(
+                (User.email.ilike(f"%{query}%")) | 
+                (User.full_name.ilike(f"%{query}%"))
+            )
+            
+        total_result = await self.db.execute(count_stmt)
+        total = total_result.scalar() or 0
+
+        # Apply ordering and pagination
+        # Note: we order by the aggregate last_seen (desc) then by name
+        stmt = stmt.order_by(func.max(AccessToken.created_at).desc().nulls_last(), User.full_name.asc())
+        stmt = stmt.offset(offset).limit(limit)
+        
+        result = await self.db.execute(stmt)
+        rows = result.all()
+        
+        items = []
+        for uid, email, fn, av, ls, banned in rows:
+            items.append({
                 "user_id": uid,
                 "email": email,
                 "full_name": fn,
                 "avatar_url": av,
                 "last_seen": ls.isoformat() if ls else None,
-            }
-            for uid, email, fn, av, ls in r.all()
-        ]
+                "is_banned": bool(banned),
+            })
+
+        return {
+            "items": items,
+            "total": total,
+            "offset": offset,
+            "limit": limit
+        }
+
+    async def app_recent_users(self, client_db_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        # Keep this for backward compatibility or simple dropdowns
+        res = await self.app_users_paginated(client_db_id, offset=0, limit=limit)
+        return res["items"]
 
     async def user_activity(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         stmt = (

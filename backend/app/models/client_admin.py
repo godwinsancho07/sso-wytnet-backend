@@ -30,4 +30,4 @@ class ClientAdmin(Base):
     )
 
     user = relationship("User", backref="administered_clients")
-    client = relationship("OAuthClient", backref="admins")
+    client = relationship("OAuthClient", back_populates="admins")

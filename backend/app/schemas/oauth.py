@@ -61,6 +61,7 @@ class OAuthClientCreate(BaseModel):
     allowed_scopes: List[str] = Field(default=["openid", "profile", "email"])
     is_confidential: bool = True
     require_pkce: bool = True
+    initial_admin_id: Optional[str] = None
 
 
 class OAuthClientUpdate(BaseModel):

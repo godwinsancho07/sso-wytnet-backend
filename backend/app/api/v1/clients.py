@@ -137,7 +137,8 @@ async def delete_client(
     current_user: CurrentUser,
     db: DB,
 ) -> None:
-    # Only super_admin gets client:delete in our seed; app_admin does NOT
+    if not await user_owns_client(db, current_user, client_id):
+        raise PermissionDeniedError("client:delete")
     service = ClientService(db)
     await service.delete_client(client_id, actor_id=current_user.id)
 

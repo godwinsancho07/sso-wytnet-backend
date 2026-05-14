@@ -51,7 +51,7 @@ ROLE_DEFINITIONS = {
     "app_admin": {
         "description": "Owns one or more OAuth clients. Service layer scopes to their clients.",
         "permissions": [
-            "client:read", "client:edit", "client:rotate",
+            "client:create", "client:read", "client:edit", "client:delete", "client:rotate",
             "user:read",
             "session:read", "session:revoke",
             "audit:read",

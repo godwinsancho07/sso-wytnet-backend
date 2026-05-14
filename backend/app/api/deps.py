@@ -49,6 +49,27 @@ async def get_current_user(
     if token_obj and (token_obj.is_revoked or token_obj.is_expired):
         raise InvalidTokenError("Token has been revoked")
 
+    # Check if user is banned from this specific app (client_id from token)
+    if token_obj:
+        from app.models.app_ban import AppBan
+        from app.models.oauth_client import OAuthClient
+        from sqlalchemy import select, or_
+        
+        # Get the public client_id string to check both UUID and string bans
+        client_stmt = select(OAuthClient.client_id).where(OAuthClient.id == token_obj.client_id)
+        client_id_str = (await db.execute(client_stmt)).scalar()
+
+        ban_stmt = select(AppBan).where(
+            or_(AppBan.client_id == token_obj.client_id, AppBan.client_id == client_id_str), 
+            AppBan.user_id == user_id
+        )
+        is_banned = (await db.execute(ban_stmt)).scalar_one_or_none()
+        if is_banned:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Sorry, you have been banned from this application by the administrator."
+            )
+
     user_repo = UserRepository(db)
     user = await user_repo.get(user_id)
     if not user:

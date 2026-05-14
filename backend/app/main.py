@@ -1,4 +1,4 @@
-# Triggering reload to sync permissions
+# Triggering reload to sync permissions and create missing tables (app_bans)
 import logging
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -27,17 +27,30 @@ async def lifespan(app: FastAPI):
     from app.core.keys import _ensure_keys
     _ensure_keys(settings.private_key_path, settings.public_key_path)
     
-    # Auto-fix permissions
+    # Auto-fix tables and permissions
     try:
-        from app.db.session import async_session_factory
+        from sqlalchemy import select
+        from app.db.session import engine, async_session_factory
+        from app.db.base import Base
         from app.models.role import Permission, Role, RolePermission, UserRole
         from app.models.user import User
-        from sqlalchemy import select
+        # Ensure all models are imported so Base knows about them
+        import app.models 
+
+        # 1. Create missing tables
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
         async with async_session_factory() as db:
             # Create a debug file to confirm execution
             with open("c:\\Users\\Ayisha\\Music\\sso wytnet2\\backend\\scratch\\seed_log.txt", "w") as f:
-                f.write(f"Seed started at {datetime.now()}\n")
+                f.write(f"Startup tasks at {datetime.now()}\n")
+                
+                # Check ban count
+                from sqlalchemy import func
+                from app.models.app_ban import AppBan
+                res = await db.execute(select(func.count()).select_from(AppBan))
+                f.write(f"App bans in DB: {res.scalar()}\n")
                 
                 # 1. Define required permissions
                 required_perms = [

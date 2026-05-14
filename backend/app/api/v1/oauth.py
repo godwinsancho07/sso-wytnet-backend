@@ -73,12 +73,7 @@ async def authorize(
         login_url = f"{settings.frontend_url}/login?next={quote(next_url, safe='')}"
         return RedirectResponse(login_url)
 
-    # Check for explicit confirmation (Consent)
-    if request.query_params.get("confirm") != "true":
-        from app.config.settings import settings
-        consent_url = f"{settings.frontend_url}/consent/authorize?{request.url.query}"
-        return RedirectResponse(consent_url)
-
+    from app.repositories.user import UserRepository
     user_id = payload.get("sub")
     user_repo = UserRepository(db)
     current_user = await user_repo.get(user_id)
@@ -96,6 +91,27 @@ async def authorize(
 
     flow = OAuthFlowService(db)
     client = await flow.validate_authorization_request(auth_req)
+
+    # Check if user is banned from this specific app
+    from app.models.app_ban import AppBan
+    from sqlalchemy import select, or_
+    
+    # Check by both client.id (UUID) and the client_id string to be 100% sure
+    ban_stmt = select(AppBan).where(
+        or_(AppBan.client_id == client.id, AppBan.client_id == client_id),
+        AppBan.user_id == current_user.id
+    )
+    is_banned = (await db.execute(ban_stmt)).scalar_one_or_none()
+    
+    if is_banned:
+        from app.config.settings import settings
+        return RedirectResponse(f"{settings.frontend_url}/banned?client_id={client_id}")
+
+    # Check for explicit confirmation (Consent)
+    if request.query_params.get("confirm") != "true":
+        from app.config.settings import settings
+        consent_url = f"{settings.frontend_url}/consent/authorize?{request.url.query}"
+        return RedirectResponse(consent_url)
 
     code = await flow.create_authorization_code(
         client=client,
@@ -169,15 +185,52 @@ async def revoke(body: OAuthRevokeRequest, db: DB) -> dict:
     await flow.revoke_token(body.token, body.token_type_hint)
     return {"revoked": True}
 @router.get("/oauth/client-info")
-async def client_info(client_id: str, db: DB) -> dict:
+async def client_info(
+    client_id: str, 
+    db: DB,
+    request: Request
+) -> dict:
     """Returns app name and scopes for WytPass consent screen."""
+    from app.core.security import decode_access_token
+    from app.models.app_ban import AppBan
+    from sqlalchemy import select
+    from jose import JWTError
+
     clients = OAuthClientRepository(db)
     client = await clients.get_by_client_id(client_id)
     if not client:
         raise InvalidClientError()
+
+    # Check for ban if user is logged in
+    is_banned = False
+    token = request.cookies.get("access_token")
+    if token:
+        try:
+            payload = decode_access_token(token)
+            user_id = payload.get("sub")
+            if user_id:
+                from sqlalchemy import or_
+                ban_stmt = select(AppBan).where(
+                    or_(AppBan.client_id == client.id, AppBan.client_id == client_id),
+                    AppBan.user_id == user_id
+                )
+                ban_obj = (await db.execute(ban_stmt)).scalar_one_or_none()
+                is_banned = ban_obj is not None
+        except (JWTError, Exception):
+            pass
+
     return {
         "client_id": client.client_id,
         "app_name": client.app_name,
         "scopes": client.allowed_scopes,
         "logo_url": getattr(client, "logo_url", None),
+        "is_banned": is_banned
     }
+
+@router.get("/oauth/debug-bans")
+async def debug_bans(db: DB):
+    from app.models.app_ban import AppBan
+    from sqlalchemy import select
+    res = await db.execute(select(AppBan))
+    bans = res.scalars().all()
+    return [{"user_id": b.user_id, "client_id": b.client_id} for b in bans]

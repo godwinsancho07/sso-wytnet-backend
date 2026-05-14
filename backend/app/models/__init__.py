@@ -11,6 +11,8 @@ from .blocked_ip import BlockedIP
 from .user_mfa import UserMFA
 from .provider_setting import ProviderSetting
 
+from .app_ban import AppBan
+
 __all__ = [
     "User",
     "SocialAccount",
@@ -28,4 +30,5 @@ __all__ = [
     "BlockedIP",
     "UserMFA",
     "ProviderSetting",
+    "AppBan",
 ]

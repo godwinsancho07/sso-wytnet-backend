@@ -1,10 +1,16 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from sqlalchemy import String, Boolean, DateTime, Text, ARRAY
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from .authorization_code import AuthorizationCode
+    from .token import AccessToken, RefreshToken
+    from .client_admin import ClientAdmin
+    from .app_ban import AppBan
 
 
 class OAuthClient(Base):
@@ -40,6 +46,12 @@ class OAuthClient(Base):
     )
     refresh_tokens: Mapped[List["RefreshToken"]] = relationship(
         "RefreshToken", back_populates="client", cascade="all, delete-orphan"
+    )
+    admins: Mapped[List["ClientAdmin"]] = relationship(
+        "ClientAdmin", back_populates="client", cascade="all, delete-orphan"
+    )
+    bans: Mapped[List["AppBan"]] = relationship(
+        "AppBan", back_populates="client", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

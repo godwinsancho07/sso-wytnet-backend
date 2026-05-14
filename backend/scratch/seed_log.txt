@@ -1,2 +1,3 @@
-Seed started at 2026-05-14 12:33:09.726949
+Startup tasks at 2026-05-14 17:47:44.440244
+App bans in DB: 1
 Successfully synced permissions and roles

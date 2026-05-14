@@ -114,6 +114,94 @@ async def app_metrics(client_id: str, current_user: CurrentUser, db: DB) -> dict
     return await MetricsService(db).app_overview(client_id)
 
 
+@router.get("/clients/{client_id}/users")
+async def app_users_paginated(
+    client_id: str,
+    current_user: CurrentUser,
+    db: DB,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    q: str | None = Query(None),
+) -> dict:
+    # Ensure tables exist (temporary fix for missing app_bans)
+    from app.db.base import Base
+    import app.models
+    async with db.bind.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    if not await user_owns_client(db, current_user, client_id):
+        raise PermissionDeniedError("client:read")
+    return await MetricsService(db).app_users_paginated(client_id, offset, limit, q)
+
+
+@router.post("/clients/{client_id}/users/{user_id}/ban")
+async def ban_user_from_app(
+    client_id: str,
+    user_id: str,
+    current_user: CurrentUser,
+    db: DB,
+    reason: str | None = None,
+) -> dict:
+    if not await user_owns_client(db, current_user, client_id):
+        raise PermissionDeniedError("client:edit")
+    
+    from app.models.app_ban import AppBan
+    from sqlalchemy import delete
+    
+    # Check if already banned
+    stmt = select(AppBan).where(AppBan.client_id == client_id, AppBan.user_id == user_id)
+    existing = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if not existing:
+        ban = AppBan(
+            user_id=user_id,
+            client_id=client_id,
+            reason=reason,
+            banned_by=current_user.id
+        )
+        db.add(ban)
+        
+        # Revoke all tokens for this user and client to enforce the ban immediately
+        from app.models.token import AccessToken, RefreshToken
+        from sqlalchemy import update
+        
+        await db.execute(
+            update(AccessToken)
+            .where(AccessToken.user_id == user_id, AccessToken.client_id == client_id)
+            .values(is_revoked=True)
+        )
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id, RefreshToken.client_id == client_id)
+            .values(is_revoked=True)
+        )
+        
+        await db.commit()
+    
+    return {"status": "banned"}
+
+
+@router.delete("/clients/{client_id}/users/{user_id}/ban")
+async def unban_user_from_app(
+    client_id: str,
+    user_id: str,
+    current_user: CurrentUser,
+    db: DB,
+) -> dict:
+    if not await user_owns_client(db, current_user, client_id):
+        raise PermissionDeniedError("client:edit")
+    
+    from app.models.app_ban import AppBan
+    from sqlalchemy import delete
+    
+    await db.execute(
+        delete(AppBan).where(AppBan.client_id == client_id, AppBan.user_id == user_id)
+    )
+    await db.commit()
+    
+    return {"status": "unbanned"}
+
+
 @router.get("/clients/{client_id}/recent-users")
 async def app_recent_users(
     client_id: str,

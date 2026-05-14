@@ -7,6 +7,7 @@ from app.config import settings
 from app.core.exceptions import (
     InvalidClientError, InvalidGrantError, InvalidRedirectUriError,
     InvalidScopeError, PKCERequiredError, PKCEVerificationError, UnauthorizedClientError,
+    PermissionDeniedError,
 )
 from app.core.security import (
     create_access_token, create_id_token, generate_token,
@@ -87,6 +88,14 @@ class OAuthFlowService:
 
         return client
 
+    async def check_app_ban(self, user_id: str, client_db_id: str):
+        from app.models.app_ban import AppBan
+        from sqlalchemy import select
+        stmt = select(AppBan).where(AppBan.user_id == user_id, AppBan.client_id == client_db_id)
+        ban = (await self.session.execute(stmt)).scalar_one_or_none()
+        if ban:
+            raise PermissionDeniedError("Access denied: You have been banned from this application.")
+
     async def create_authorization_code(
         self,
         client: OAuthClient,
@@ -97,6 +106,7 @@ class OAuthFlowService:
         code_challenge_method: Optional[str],
         nonce: Optional[str],
     ) -> str:
+        await self.check_app_ban(user_id, client.id)
         code = generate_token(32)
         expires = datetime.now(timezone.utc) + timedelta(
             minutes=settings.auth_code_expire_minutes
@@ -226,6 +236,8 @@ class OAuthFlowService:
         user = await self.users.get(token_obj.user_id)
         if not user or not user.is_active:
             raise InvalidGrantError("User not found or inactive")
+
+        await self.check_app_ban(user.id, client.id)
 
         await self.refresh_tokens.revoke(refresh_token)
 
