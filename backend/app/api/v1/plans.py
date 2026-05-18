@@ -26,7 +26,7 @@ router = APIRouter()
 client = razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
 print("!!! PLANS ROUTER LOADING !!!")
 
-@router.get("/", response_model=List[PlanResponse])
+@router.get("", response_model=List[PlanResponse])
 async def list_plans(
     plan_type: Optional[PlanType] = None,
     db: AsyncSession = Depends(get_db),
@@ -260,7 +260,7 @@ async def verify_razorpay_payment(
     await db.commit()
     return {"status": "success", "message": f"Successfully upgraded to {plan.name}"}
 
-@router.post("/", response_model=PlanResponse)
+@router.post("", response_model=PlanResponse)
 async def create_plan(
     plan_in: PlanCreate,
     db: AsyncSession = Depends(get_db),

@@ -257,6 +257,13 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(AuditMiddleware)
 
+# Force HTTPS scheme behind reverse proxies (Coolify, Nginx, etc.)
+@app.middleware("http")
+async def force_https_behind_proxy(request: Request, call_next):
+    if request.headers.get("x-forwarded-proto") == "https":
+        request.scope["scheme"] = "https"
+    return await call_next(request)
+
 # Disable caching for all API GET requests to ensure fresh state across logins
 @app.middleware("http")
 async def add_no_cache_headers(request: Request, call_next):
