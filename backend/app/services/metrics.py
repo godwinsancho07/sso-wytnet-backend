@@ -219,8 +219,36 @@ class MetricsService:
             "blocked_ips": blocked_ips,
             "rate_limit_hits_24h": 0,   # Populated by Redis counters if available
             "account_lockouts": account_lockouts,
+            
+            # Revenue & Business
+            "total_revenue": float(await self._sum_revenue() or 0),
+            "today_revenue": float(await self._sum_revenue(today_start) or 0),
+            "total_upgrades": int(await self._count_upgrades() or 0),
+            
             "generated_at": now.isoformat(),
         }
+
+    async def _count_upgrades(self, since=None) -> int:
+        from app.models.plan import CreditLog
+        stmt = select(func.count(CreditLog.id)).where(CreditLog.event_type == "plan_upgrade")
+        if since:
+            stmt = stmt.where(CreditLog.created_at >= since)
+        result = await self.db.execute(stmt)
+        return result.scalar() or 0
+
+    async def _sum_revenue(self, since=None) -> float:
+        from app.models.plan import CreditLog, Plan
+        from app.models.user import User
+        stmt = (
+            select(func.sum(func.coalesce(Plan.price, 1.0)))
+            .outerjoin(User, CreditLog.owner_id == User.id)
+            .outerjoin(Plan, User.plan_id == Plan.id)
+            .where(CreditLog.event_type == "plan_upgrade")
+        )
+        if since:
+            stmt = stmt.where(CreditLog.created_at >= since)
+        result = await self.db.execute(stmt)
+        return result.scalar() or 0
 
     async def login_timeseries(self, hours: int = 24) -> List[Dict[str, Any]]:
         """Hour-by-hour bucketed login counts (success vs failure)."""

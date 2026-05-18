@@ -16,12 +16,77 @@ from app.permissions import (
     user_owns_client,
     is_super_admin,
 )
+from app.models.plan import Plan, PlanType, CreditLog
+from sqlalchemy import select, update, and_, func
 from app.repositories.audit_log import AuditLogRepository
 from app.repositories.session import SessionRepository
 from app.repositories.user import UserRepository
 from app.services.metrics import MetricsService
 
 router = APIRouter(prefix="", tags=["admin"])
+
+@router.get("/plans/revenue")
+async def get_revenue_report(
+    db: DB,
+    current_user: CurrentUser
+):
+    # Diagnostic: What event types exist?
+    types_stmt = select(CreditLog.event_type).distinct()
+    found_types = (await db.execute(types_stmt)).scalars().all()
+    print(f"DEBUG REVENUE (ADMIN): Found types in DB: {found_types}")
+    
+    # Total Revenue and count
+    # Simplified: Every 'plan_upgrade' log is worth ₹1
+    # EXCLUDE specific admin email as requested
+    stmt = (
+        select(func.count(CreditLog.id))
+        .outerjoin(User, CreditLog.owner_id == User.id)
+        .where(
+            func.lower(CreditLog.event_type) == "plan_upgrade",
+            func.coalesce(User.email, "") != "admin@example.com"
+        )
+    )
+    total_payments = (await db.execute(stmt)).scalar() or 0
+    print(f"DEBUG REVENUE (ADMIN): Total payments count: {total_payments}")
+    total_revenue = float(total_payments) * 1.0
+    
+    # Recent Payments with User info
+    recent_stmt = (
+        select(
+            CreditLog.created_at, 
+            func.coalesce(User.email, "Unknown User"), 
+            func.coalesce(Plan.name, "Developer Program Upgrade")
+        )
+        .outerjoin(User, CreditLog.owner_id == User.id)
+        .outerjoin(Plan, User.plan_id == Plan.id)
+        .where(
+            func.lower(CreditLog.event_type) == "plan_upgrade",
+            func.coalesce(User.email, "") != "admin@example.com"
+        )
+        .order_by(CreditLog.created_at.desc())
+        .limit(100)
+    )
+    recent_results = (await db.execute(recent_stmt)).all()
+    
+    payments = [
+        {
+            "date": r[0].isoformat() if r[0] else datetime.now().isoformat(),
+            "email": r[1],
+            "amount": 1.0,
+            "plan_name": r[2]
+        }
+        for r in recent_results
+    ]
+
+    return {
+        "total_revenue": total_revenue,
+        "total_payments": total_payments,
+        "recent_payments": payments,
+        "debug": {
+            "found_types": found_types,
+            "raw_log_count": total_payments
+        }
+    }
 
 
 # ── Super Admin metrics ───────────────────────────────────────────────────────
@@ -192,14 +257,29 @@ async def unban_user_from_app(
         raise PermissionDeniedError("client:edit")
     
     from app.models.app_ban import AppBan
-    from sqlalchemy import delete
+    from app.models.token import AccessToken, RefreshToken
+    from sqlalchemy import delete, update
     
     await db.execute(
         delete(AppBan).where(AppBan.client_id == client_id, AppBan.user_id == user_id)
     )
+    
+    # Restore tokens that were revoked by the ban
+    await db.execute(
+        update(AccessToken)
+        .where(AccessToken.user_id == user_id, AccessToken.client_id == client_id)
+        .values(is_revoked=False)
+    )
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id, RefreshToken.client_id == client_id)
+        .values(is_revoked=False)
+    )
+    
     await db.commit()
     
     return {"status": "unbanned"}
+
 
 
 @router.get("/clients/{client_id}/recent-users")
@@ -237,8 +317,8 @@ async def revoke_authorized_app(
     db: DB,
 ) -> dict:
     """Revoke all of the user's tokens for a specific OAuth client."""
-    from sqlalchemy import update
-    from app.models import AccessToken, RefreshToken
+    from sqlalchemy import update, delete
+    from app.models import AccessToken, RefreshToken, AuthorizationCode
 
     for model in (AccessToken, RefreshToken):
         await db.execute(
@@ -246,7 +326,18 @@ async def revoke_authorized_app(
             .where(model.user_id == current_user.id, model.client_id == client_db_id)
             .values(is_revoked=True)
         )
+    
+    # Also invalidate any pending authorization codes
+    await db.execute(
+        update(AuthorizationCode)
+        .where(AuthorizationCode.user_id == current_user.id, AuthorizationCode.client_id == client_db_id)
+        .values(is_used=True)
+    )
+    
+    await db.commit()
     return {"revoked": True}
+
+
 
 
 # ── Super Admin: Sessions across all users ───────────────────────────────────
@@ -354,6 +445,8 @@ async def admin_revoke_session(
             "admin_id": current_user.id,
         },
     )
+    await db.commit()
+
 
 
 @router.post(
@@ -400,7 +493,9 @@ async def admin_revoke_user_sessions(
             "refresh_tokens_revoked": revoked_refresh,
         },
     )
+    await db.commit()
     return {
         "revoked_sessions": revoked_sessions,
         "revoked_refresh_tokens": revoked_refresh,
+
     }

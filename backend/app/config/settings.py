@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     rate_limit_register: str = "5/minute"
     rate_limit_password_reset: str = "3/minute"
 
+    # Razorpay
+    razorpay_key_id: str = "rzp_live_RMxf287wX4f7FQ"
+    razorpay_key_secret: str = "1MLyIthYIvhJ7MMNWRvZ2qRO"
+
 
 @lru_cache
 def get_settings() -> Settings:

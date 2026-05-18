@@ -12,6 +12,7 @@ from .user_mfa import UserMFA
 from .provider_setting import ProviderSetting
 
 from .app_ban import AppBan
+from .plan import Plan, CreditLog
 
 __all__ = [
     "User",
@@ -31,4 +32,6 @@ __all__ = [
     "UserMFA",
     "ProviderSetting",
     "AppBan",
+    "Plan",
+    "CreditLog",
 ]

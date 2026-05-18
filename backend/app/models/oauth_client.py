@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, TYPE_CHECKING
-from sqlalchemy import String, Boolean, DateTime, Text, ARRAY
+from sqlalchemy import String, Boolean, DateTime, Text, ARRAY, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from .token import AccessToken, RefreshToken
     from .client_admin import ClientAdmin
     from .app_ban import AppBan
+    from .plan import Plan
 
 
 class OAuthClient(Base):
@@ -29,6 +30,12 @@ class OAuthClient(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_confidential: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     require_pkce: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    
+    # Credit Tracking
+    plan_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("plans.id"), nullable=True)
+    credits_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    warning_email_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -53,6 +60,7 @@ class OAuthClient(Base):
     bans: Mapped[List["AppBan"]] = relationship(
         "AppBan", back_populates="client", cascade="all, delete-orphan"
     )
+    plan: Mapped["Plan"] = relationship("Plan", back_populates="oauth_clients")
 
     def __repr__(self) -> str:
         return f"<OAuthClient client_id={self.client_id} app_name={self.app_name}>"

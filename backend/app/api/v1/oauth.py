@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.api.deps import CurrentUser, DB
-from app.core.exceptions import InvalidClientError, InvalidRedirectUriError
+from app.core.exceptions import InvalidClientError, InvalidRedirectUriError, AppException, OAuthError
 from app.oauth.flows import OAuthFlowService
 from app.oidc.discovery import get_openid_configuration
 from app.oidc.jwks import get_jwks_document
@@ -14,6 +14,9 @@ from app.repositories.token import AccessTokenRepository
 from app.schemas.oauth import (
     OAuthAuthorizeRequest, OAuthRevokeRequest, OAuthTokenResponse, OAuthUserInfo,
 )
+
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["oauth"])
 
@@ -113,15 +116,25 @@ async def authorize(
         consent_url = f"{settings.frontend_url}/consent/authorize?{request.url.query}"
         return RedirectResponse(consent_url)
 
-    code = await flow.create_authorization_code(
-        client=client,
-        user_id=current_user.id,
-        redirect_uri=redirect_uri,
-        scopes=auth_req.scopes_list,
-        code_challenge=code_challenge,
-        code_challenge_method=code_challenge_method,
-        nonce=nonce,
-    )
+    try:
+        code = await flow.create_authorization_code(
+            client=client,
+            user_id=current_user.id,
+            redirect_uri=redirect_uri,
+            scopes=auth_req.scopes_list,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            nonce=nonce,
+        )
+    except AppException as e:
+        if getattr(e, 'error_code', None) == "out_of_credits":
+            from app.config.settings import settings
+            return RedirectResponse(f"{settings.frontend_url}/banned?client_id={client_id}&reason=out_of_credits")
+        raise e
+    except Exception as e:
+        # Fallback for any other error
+        logger.error(f"Error in authorize: {e}")
+        raise e
 
     location = f"{redirect_uri}?code={code}"
     if state:
@@ -201,30 +214,48 @@ async def client_info(
     if not client:
         raise InvalidClientError()
 
-    # Check for ban if user is logged in
-    is_banned = False
+    # Credit Check
+    flow = OAuthFlowService(db)
+    
+    # Get user_id if logged in
+    user_id = None
     token = request.cookies.get("access_token")
+    if not token:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            
     if token:
         try:
+            from app.core.security import decode_access_token
             payload = decode_access_token(token)
             user_id = payload.get("sub")
-            if user_id:
-                from sqlalchemy import or_
-                ban_stmt = select(AppBan).where(
-                    or_(AppBan.client_id == client.id, AppBan.client_id == client_id),
-                    AppBan.user_id == user_id
-                )
-                ban_obj = (await db.execute(ban_stmt)).scalar_one_or_none()
-                is_banned = ban_obj is not None
+        except:
+            pass
+    
+    # Check for ban if user is logged in
+    is_banned = False
+    if user_id:
+        try:
+            from sqlalchemy import or_
+            ban_stmt = select(AppBan).where(
+                or_(AppBan.client_id == client.id, AppBan.client_id == client_id),
+                AppBan.user_id == user_id
+            )
+            ban_obj = (await db.execute(ban_stmt)).scalar_one_or_none()
+            is_banned = ban_obj is not None
         except (JWTError, Exception):
             pass
+
+    has_credits = await flow.check_credits(client, user_id=user_id)
 
     return {
         "client_id": client.client_id,
         "app_name": client.app_name,
         "scopes": client.allowed_scopes,
         "logo_url": getattr(client, "logo_url", None),
-        "is_banned": is_banned
+        "is_banned": is_banned,
+        "out_of_credits": not has_credits
     }
 
 @router.get("/oauth/debug-bans")

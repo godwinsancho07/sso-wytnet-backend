@@ -169,9 +169,52 @@ async def change_password(
 
 
 @router.get("/me", response_model=UserRead)
-async def get_me(response: Response, current_user: CurrentUser) -> UserRead:
+async def get_me(response: Response, current_user: CurrentUser, db: DB) -> UserRead:
     # Prevent browser caching of user identity
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    
+    # Calculate credits used
+    from app.models.plan import CreditLog
+    from sqlalchemy import select, func
+    stmt = select(func.sum(CreditLog.credits_change)).where(
+        CreditLog.owner_id == current_user.id,
+        CreditLog.event_type == "trust_login"
+    )
+    result = await db.execute(stmt)
+    credits_used = abs(result.scalar() or 0)
+    
+    # Add to user object for schema validation
+    current_user.credits_used = credits_used
+    
+    # ENSURE PLAN IS PRESENT: Auto-assign correct default based on role (Developer vs User)
+    from app.models.plan import Plan, PlanType
+    from app.permissions.checker import get_user_roles
+    
+    user_roles = await get_user_roles(db, current_user)
+    # Developers (App Admins and Super Admins) get DEVELOPER plans, regular users get USER plans
+    is_developer = "app_admin" in user_roles or "super_admin" in user_roles
+    target_type = PlanType.DEVELOPER if is_developer else PlanType.USER
+    
+    # Auto-fix: if no plan OR wrong plan type for their role (e.g. app_admin having a USER plan)
+    if not current_user.plan_id or (current_user.plan and current_user.plan.type != target_type):
+        plan_res = await db.execute(
+            select(Plan).where(Plan.type == target_type, Plan.is_default == True)
+        )
+        default_plan = plan_res.scalar_one_or_none()
+        
+        # Fallback if no explicit default found for that type
+        if not default_plan:
+            plan_res = await db.execute(select(Plan).where(Plan.type == target_type))
+            default_plan = plan_res.scalars().first()
+            
+        if default_plan:
+            current_user.plan_id = default_plan.id
+            current_user.plan = default_plan
+            await db.commit()
+
+    if current_user.plan:
+        current_user.plan.credits_used = credits_used
+        
     return UserRead.model_validate(current_user)
 
 

@@ -71,7 +71,7 @@ async def get_current_user(
             )
 
     user_repo = UserRepository(db)
-    user = await user_repo.get(user_id)
+    user = await user_repo.get_with_plan(user_id)
     if not user:
         raise UserNotFoundError()
     if not user.is_active:

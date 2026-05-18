@@ -1,9 +1,19 @@
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
-from sqlalchemy import String, Boolean, DateTime, Text, Integer
+from sqlalchemy import String, Boolean, DateTime, Text, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .plan import Plan
+    from .social_account import SocialAccount
+    from .session import Session
+    from .token import AccessToken, RefreshToken
+    from .authorization_code import AuthorizationCode
+    from .role import UserRole
+    from .audit_log import AuditLog
 
 
 class User(Base):
@@ -24,6 +34,9 @@ class User(Base):
     password_reset_expires: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    plan_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("plans.id"), nullable=True)
+    
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -55,6 +68,7 @@ class User(Base):
     audit_logs: Mapped[List["AuditLog"]] = relationship(
         "AuditLog", back_populates="user", cascade="all, delete-orphan"
     )
+    plan: Mapped["Plan"] = relationship("Plan", back_populates="users")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email}>"

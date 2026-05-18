@@ -44,6 +44,17 @@ class AuthService:
         if await self.users.get_by_email(data.email):
             raise UserAlreadyExistsError()
 
+        # Fetch default plan
+        from app.models.plan import Plan, PlanType
+        from sqlalchemy import select
+        res = await self.db.execute(select(Plan).where(Plan.type == PlanType.USER, Plan.is_default == True))
+        default_plan = res.scalar_one_or_none()
+        
+        # If no user plan is default, try any default
+        if not default_plan:
+            res = await self.db.execute(select(Plan).where(Plan.is_default == True))
+            default_plan = res.scalar_one_or_none()
+
         # Auto-verify user on creation as requested
         user = await self.users.create_user(
             email=data.email,
@@ -52,6 +63,11 @@ class AuthService:
             email_verified=True,
             email_verification_token=None,
         )
+        
+        if default_plan:
+            user.plan_id = default_plan.id
+            await self.db.commit()
+
 
         await self.audit.log(
             "user.register",

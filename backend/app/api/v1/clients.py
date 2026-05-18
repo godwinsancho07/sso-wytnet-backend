@@ -79,9 +79,17 @@ async def list_clients(
         user_count_stmt = select(func.count(func.distinct(RefreshToken.user_id))).where(RefreshToken.client_id == c.id, RefreshToken.is_revoked == False)
         user_count = (await db.execute(user_count_stmt)).scalar() or 0
         
+        # Fetch plan info for limits
+        from app.models.plan import Plan
+        plan = None
+        if c.plan_id:
+            plan = await db.get(Plan, c.plan_id)
+        
         dto = OAuthClientRead.model_validate(c)
         dto.admin_emails = list(emails)
         dto.user_count = user_count
+        dto.credits_used = c.credits_used
+        dto.credits_limit = plan.credits_limit if plan else None
         results.append(dto)
     return results
 
@@ -165,6 +173,37 @@ async def rotate_secret(
     result["client_secret"] = secret
     result["admin_emails"] = list(emails)
     return OAuthClientWithSecret(**result)
+
+
+@router.post(
+    "/{client_id}/upgrade-plan",
+    response_model=OAuthClientRead,
+    dependencies=[Depends(require_permission("client:edit"))],
+)
+async def upgrade_client_plan(
+    client_id: str,
+    plan_id: str,
+    current_user: CurrentUser,
+    db: DB,
+) -> OAuthClientRead:
+    if not await user_owns_client(db, current_user, client_id):
+        raise PermissionDeniedError("client:edit")
+    
+    from app.models.plan import Plan
+    plan = await db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+        
+    repo = OAuthClientRepository(db)
+    client = await repo.get(client_id)
+    
+    client.plan_id = plan.id
+    client.credits_used = 0 # Reset credits on upgrade
+    client.warning_email_sent = False
+    
+    await db.commit()
+    await db.refresh(client)
+    return OAuthClientRead.model_validate(client)
 
 
 # ── Client admin (assignment) management ─────────────────────────────────────
@@ -254,6 +293,8 @@ async def assign_client_admin(
         db.add(record)
         await db.flush()
         await db.refresh(record)
+    await db.commit()
+
 
     return ClientAdminRead(
         user_id=user.id,
@@ -283,6 +324,8 @@ async def remove_client_admin(
             ClientAdmin.client_id == client_id,
         )
     )
+    await db.commit()
+
 
 
 # ── Integration docs (personalized per client) ───────────────────────────────

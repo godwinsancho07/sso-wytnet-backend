@@ -29,7 +29,22 @@ router = APIRouter(prefix="/users", tags=["users"])
 # ── Self-scoped endpoints (existing) ────────────────────────────────────────
 
 @router.get("/me", response_model=UserRead)
-async def get_profile(current_user: CurrentUser) -> UserRead:
+async def get_profile(current_user: CurrentUser, db: DB) -> UserRead:
+    # Calculate credits used
+    from app.models.plan import CreditLog
+    from sqlalchemy import select, func
+    stmt = select(func.sum(CreditLog.credits_change)).where(
+        CreditLog.owner_id == current_user.id,
+        CreditLog.event_type == "trust_login"
+    )
+    result = await db.execute(stmt)
+    credits_used = abs(result.scalar() or 0)
+    
+    # Add to user object
+    current_user.credits_used = credits_used
+    if current_user.plan:
+        current_user.plan.credits_used = credits_used
+        
     return UserRead.model_validate(current_user)
 
 
@@ -41,6 +56,21 @@ async def update_profile(
 ) -> UserRead:
     service = UserService(db)
     user = await service.update_profile(current_user.id, body)
+    
+    # Calculate credits used
+    from app.models.plan import CreditLog
+    from sqlalchemy import select, func
+    stmt = select(func.sum(CreditLog.credits_change)).where(
+        CreditLog.owner_id == user.id,
+        CreditLog.event_type == "trust_login"
+    )
+    result = await db.execute(stmt)
+    credits_used = abs(result.scalar() or 0)
+    
+    user.credits_used = credits_used
+    if user.plan:
+        user.plan.credits_used = credits_used
+        
     return UserRead.model_validate(user)
 
 
@@ -457,11 +487,18 @@ async def get_connected_apps(current_user: CurrentUser, db: DB) -> list:
     
     # 2. Apps with recent authorization codes (even if not exchanged yet)
     from app.models.authorization_code import AuthorizationCode
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
     stmt2 = (
         select(OAuthClient.id)
         .join(AuthorizationCode, OAuthClient.id == AuthorizationCode.client_id)
-        .where(AuthorizationCode.user_id == current_user.id)
+        .where(
+            AuthorizationCode.user_id == current_user.id,
+            AuthorizationCode.is_used == False,
+            AuthorizationCode.expires_at > now
+        )
     )
+
     
     # Combine
     combined_ids = select(union_all(stmt1, stmt2).alias("ids"))
@@ -512,11 +549,18 @@ async def admin_get_connected_apps(user_id: str, db: DB) -> list:
     )
     
     # 2. Apps with recent authorization codes
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
     stmt2 = (
         select(OAuthClient.id)
         .join(AuthorizationCode, OAuthClient.id == AuthorizationCode.client_id)
-        .where(AuthorizationCode.user_id == user_id)
+        .where(
+            AuthorizationCode.user_id == user_id,
+            AuthorizationCode.is_used == False,
+            AuthorizationCode.expires_at > now
+        )
     )
+
     
     combined_ids = select(union_all(stmt1, stmt2).alias("ids"))
     

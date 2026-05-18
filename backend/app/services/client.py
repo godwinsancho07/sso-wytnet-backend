@@ -11,6 +11,8 @@ from app.models import AccessToken, RefreshToken
 from app.models.oauth_client import OAuthClient
 from app.repositories.audit_log import AuditLogRepository
 from app.repositories.oauth_client import OAuthClientRepository
+from app.models.plan import Plan, PlanType
+from sqlalchemy import select
 from app.schemas.oauth import OAuthClientCreate, OAuthClientUpdate
 
 
@@ -31,6 +33,10 @@ class ClientService:
         client_id = f"client_{secrets.token_urlsafe(16)}"
         client_secret = secrets.token_urlsafe(32)
 
+        # Assign default plan
+        res = await self.session.execute(select(Plan).where(Plan.type == PlanType.DEVELOPER, Plan.is_default == True))
+        default_plan = res.scalar_one_or_none()
+
         # 2. state change
         client = await self.clients.create(
             client_id=client_id,
@@ -42,6 +48,7 @@ class ClientService:
             allowed_scopes=data.allowed_scopes,
             is_confidential=data.is_confidential,
             require_pkce=data.require_pkce,
+            plan_id=default_plan.id if default_plan else None,
         )
 
         # 3. Add admins

@@ -43,6 +43,12 @@ class UserService:
         if existing:
             raise UserAlreadyExistsError()
 
+        # Assign default plan
+        from app.models.plan import Plan, PlanType
+        from sqlalchemy import select
+        plan_stmt = select(Plan).where(Plan.type == PlanType.USER, Plan.is_default == True)
+        default_plan = (await self.session.execute(plan_stmt)).scalar_one_or_none()
+        
         user = await self.users.create_user(
             email=data.email,
             password_hash=hash_password(data.password),
@@ -50,6 +56,10 @@ class UserService:
             avatar_url=data.avatar_url,
             email_verified=True,  # Admins create verified users by default
         )
+        
+        if default_plan:
+            user.plan_id = default_plan.id
+            await self.session.flush()
 
         await self.audit.log(
             event_type="user.admin_created",

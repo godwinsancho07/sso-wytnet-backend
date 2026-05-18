@@ -37,6 +37,15 @@ class UserRepository(BaseRepository[User]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_with_plan(self, user_id: str) -> Optional[User]:
+        stmt = (
+            select(User)
+            .where(User.id == user_id)
+            .options(selectinload(User.plan))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def search(
         self, 
         query: str, 
@@ -142,10 +151,17 @@ class UserRepository(BaseRepository[User]):
         )
         
         # 2. Apps with codes
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
         stmt2 = (
             select(AuthorizationCode.client_id)
-            .where(AuthorizationCode.user_id == user_id)
+            .where(
+                AuthorizationCode.user_id == user_id,
+                AuthorizationCode.is_used == False,
+                AuthorizationCode.expires_at > now
+            )
         )
+
         
         combined = union_all(stmt1, stmt2).alias("combined")
         

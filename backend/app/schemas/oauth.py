@@ -90,6 +90,9 @@ class OAuthClientRead(BaseModel):
     created_at: datetime
     admin_emails: List[str] = []
     user_count: int = 0
+    plan_id: Optional[str] = None
+    credits_used: int = 0
+    credits_limit: Optional[int] = None
 
 
 class OAuthClientPublic(BaseModel):

@@ -18,6 +18,12 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = None
 
 
+class UserPlanRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    name: str
+    credits_limit: int
+    credits_used: int = 0
+
 class UserRead(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -25,6 +31,9 @@ class UserRead(UserBase):
     email_verified: bool
     is_active: bool
     is_superuser: bool
+    plan_id: Optional[str] = None
+    plan: Optional[UserPlanRead] = None
+    credits_used: int = 0
     created_at: datetime
     updated_at: datetime
 

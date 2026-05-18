@@ -1,4 +1,5 @@
-# Triggering reload to sync permissions and create missing tables (app_bans)
+# Triggering reload to sync permissions and create missing tables (app_bans) - RE-RELOAD-3
+print("!!! BACKEND STARTING !!!")
 import logging
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -27,6 +28,13 @@ async def lifespan(app: FastAPI):
     from app.core.keys import _ensure_keys
     _ensure_keys(settings.private_key_path, settings.public_key_path)
     
+    # Log all registered routes for debugging
+    print("--- REGISTERED ROUTES ---")
+    for route in app.routes:
+        if hasattr(route, "path"):
+            print(f"ROUTE: {route.path}")
+    print("-------------------------")
+
     # Auto-fix tables and permissions
     try:
         from sqlalchemy import select
@@ -34,6 +42,7 @@ async def lifespan(app: FastAPI):
         from app.db.base import Base
         from app.models.role import Permission, Role, RolePermission, UserRole
         from app.models.user import User
+        from app.models.plan import Plan, PlanType, ResetInterval
         # Ensure all models are imported so Base knows about them
         import app.models 
 
@@ -68,65 +77,164 @@ async def lifespan(app: FastAPI):
                 ]
 
                 # 2. Ensure permissions exist
-                for name, res, act in required_perms:
+                for name, res_name, act in required_perms:
                     result = await db.execute(select(Permission).where(Permission.name == name))
                     if not result.scalar_one_or_none():
-                        db.add(Permission(name=name, resource=res, action=act, description=f"Ability to {act} {res}"))
+                        db.add(Permission(name=name, resource=res_name, action=act, description=f"Ability to {act} {res_name}"))
                         f.write(f"Seeded permission: {name}\n")
                 await db.flush()
 
-                # 3. Ensure super_admin role exists and has all permissions
-                result = await db.execute(select(Role).where(Role.name == "super_admin"))
-                super_role = result.scalar_one_or_none()
-                if not super_role:
-                    super_role = Role(name="super_admin", description="Platform Super Administrator")
-                    db.add(super_role)
-                    await db.flush()
-                    f.write("Created super_admin role\n")
+                # 3. Ensure required roles exist
+                required_roles = [
+                    ("super_admin", "Platform Super Administrator"),
+                    ("app_admin", "Application Administrator"),
+                    ("user", "End User"),
+                ]
+                
+                roles_map = {}
+                for r_name, r_desc in required_roles:
+                    result = await db.execute(select(Role).where(Role.name == r_name))
+                    role = result.scalar_one_or_none()
+                    if not role:
+                        role = Role(name=r_name, description=r_desc)
+                        db.add(role)
+                        await db.flush()
+                        f.write(f"Created role: {r_name}\n")
+                    roles_map[r_name] = role
 
+                # 4. Grant permissions to roles
                 all_perms = await db.execute(select(Permission))
-                for p in all_perms.scalars().all():
+                perms_list = all_perms.scalars().all()
+                
+                # Super Admin gets everything
+                for p in perms_list:
                     rp_result = await db.execute(
                         select(RolePermission).where(
-                            RolePermission.role_id == super_role.id,
+                            RolePermission.role_id == roles_map["super_admin"].id,
                             RolePermission.permission_id == p.id
                         )
                     )
                     if not rp_result.scalar_one_or_none():
-                        db.add(RolePermission(role_id=super_role.id, permission_id=p.id))
+                        db.add(RolePermission(role_id=roles_map["super_admin"].id, permission_id=p.id))
                         f.write(f"Granted {p.name} to super_admin\n")
 
-                # 4. Ensure admin users are superusers
-                admin_emails = ["admin@example.com", "ayshadhee@gmail.com"] # Adding common admin emails
-                for email in admin_emails:
-                    result = await db.execute(select(User).where(User.email == email))
-                    admin_user = result.scalar_one_or_none()
-                    if admin_user:
-                        admin_user.is_superuser = True
+                # App Admin gets client management permissions
+                app_admin_perms = ["client:read", "client:create", "client:edit", "client:delete"]
+                for p_name in app_admin_perms:
+                    p_obj = next((p for p in perms_list if p.name == p_name), None)
+                    if p_obj:
+                        rp_result = await db.execute(
+                            select(RolePermission).where(
+                                RolePermission.role_id == roles_map["app_admin"].id,
+                                RolePermission.permission_id == p_obj.id
+                            )
+                        )
+                        if not rp_result.scalar_one_or_none():
+                            db.add(RolePermission(role_id=roles_map["app_admin"].id, permission_id=p_obj.id))
+                            f.write(f"Granted {p_name} to app_admin\n")
+
+                # 5. Ensure default users exist in development
+                if settings.app_env == "development":
+                    from app.core.security import hash_password
+                    dev_users = [
+                        {
+                            "email": "admin@example.com",
+                            "password": "Admin123!@#",
+                            "full_name": "System Admin",
+                            "is_superuser": True,
+                            "role": "super_admin"
+                        },
+                        {
+                            "email": "appadmin@example.com",
+                            "password": "AppAdmin123!@#",
+                            "full_name": "App Admin",
+                            "is_superuser": False,
+                            "role": "app_admin"
+                        },
+                        {
+                            "email": "user@example.com",
+                            "password": "User123!@#",
+                            "full_name": "End User",
+                            "is_superuser": False,
+                            "role": "user"
+                        }
+                    ]
+
+                    for u_data in dev_users:
+                        result = await db.execute(select(User).where(User.email == u_data["email"]))
+                        user = result.scalar_one_or_none()
+                        if not user:
+                            user = User(
+                                email=u_data["email"],
+                                password_hash=hash_password(u_data["password"]),
+                                full_name=u_data["full_name"],
+                                is_superuser=u_data["is_superuser"],
+                                email_verified=True,
+                                is_active=True
+                            )
+                            db.add(user)
+                            await db.flush()
+                            f.write(f"Created dev user: {u_data['email']}\n")
+                        
+                        # Ensure role assignment
+                        role_obj = roles_map[u_data["role"]]
                         ur_result = await db.execute(
                             select(UserRole).where(
-                                UserRole.user_id == admin_user.id,
-                                UserRole.role_id == super_role.id
+                                UserRole.user_id == user.id,
+                                UserRole.role_id == role_obj.id
                             )
                         )
                         if not ur_result.scalar_one_or_none():
-                            db.add(UserRole(user_id=admin_user.id, role_id=super_role.id))
-                            f.write(f"Assigned super_admin role to {email}\n")
-                
-                # 5. Ensure 'readonly' role is removed (as requested)
+                            db.add(UserRole(user_id=user.id, role_id=role_obj.id))
+                            f.write(f"Assigned {u_data['role']} role to {u_data['email']}\n")
+
+                # 6. Ensure 'readonly' role is removed (legacy)
                 result = await db.execute(select(Role).where(Role.name == "readonly"))
                 readonly_role = result.scalar_one_or_none()
                 if readonly_role:
                     from sqlalchemy import delete
                     await db.execute(delete(Role).where(Role.id == readonly_role.id))
-                    f.write("Deleted 'readonly' role\n")
+                    f.write("Deleted legacy 'readonly' role\n")
+
+                # 7. Ensure default plans exist
+                
+                # Default Developer Plan (Free)
+                res = await db.execute(select(Plan).where(Plan.type == PlanType.DEVELOPER, Plan.is_default == True))
+                if not res.scalar_one_or_none():
+                    db.add(Plan(
+                        name="Free",
+                        type=PlanType.DEVELOPER,
+                        price=0.0,
+                        description="Default plan for new apps",
+                        credits_limit=2,
+                        warning_threshold=80,
+                        reset_interval=ResetInterval.NEVER,
+                        is_default=True,
+                        is_active=True
+                    ))
+                    f.write("Created default Free developer plan\n")
+
+                # Default User Plan (Basic)
+                res = await db.execute(select(Plan).where(Plan.type == PlanType.USER, Plan.is_default == True))
+                if not res.scalar_one_or_none():
+                    db.add(Plan(
+                        name="Basic",
+                        type=PlanType.USER,
+                        price=0.0,
+                        description="Standard user plan",
+                        credits_limit=0, # unlimited
+                        is_default=True,
+                        is_active=True
+                    ))
+                    f.write("Created default Basic user plan\n")
                 
                 await db.commit()
-                f.write("Successfully synced permissions and roles\n")
+                f.write("Successfully synced permissions, roles, plans, and dev users\n")
     except Exception as e:
-        logger.error(f"Failed to sync permissions: {e}")
+        logger.error(f"Failed to sync permissions: {e}", exc_info=True)
         with open("c:\\Users\\Ayisha\\Music\\sso wytnet2\\backend\\scratch\\seed_log.txt", "a") as f:
             f.write(f"ERROR: {e}\n")
+
 
     logger.info("SSO Identity Provider started")
     yield
@@ -190,4 +298,4 @@ app.include_router(api_router)
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "service": settings.app_name}
+    return {"status": "ok", "service": settings.app_name, "version": "RELOADED_V1"}

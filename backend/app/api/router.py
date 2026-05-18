@@ -13,6 +13,7 @@ from app.api.v1 import (
     security,
     providers,
     reports,
+    plans,
 )
 
 api_router = APIRouter()
@@ -34,3 +35,4 @@ api_router.include_router(admin.router, prefix="/v1")
 api_router.include_router(security.router, prefix="/v1")
 api_router.include_router(providers.router, prefix="/v1")
 api_router.include_router(reports.router, prefix="/v1")
+api_router.include_router(plans.router, prefix="/v1/plans", tags=["plans"])
