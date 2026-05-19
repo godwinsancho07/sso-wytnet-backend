@@ -1,10 +1,13 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from sqlalchemy import String, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from .user import User
 
 
 class UserMFA(Base):
@@ -37,4 +40,4 @@ class UserMFA(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    user = relationship("User", backref="mfa")
+    user: Mapped["User"] = relationship("User", back_populates="mfa")

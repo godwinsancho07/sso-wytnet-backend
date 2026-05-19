@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from .authorization_code import AuthorizationCode
     from .role import UserRole
     from .audit_log import AuditLog
+    from .client_admin import ClientAdmin
+    from .user_mfa import UserMFA
+    from .app_ban import AppBan
 
 
 class User(Base):
@@ -67,6 +70,15 @@ class User(Base):
     )
     audit_logs: Mapped[List["AuditLog"]] = relationship(
         "AuditLog", back_populates="user", cascade="all, delete-orphan"
+    )
+    administered_clients: Mapped[List["ClientAdmin"]] = relationship(
+        "ClientAdmin", back_populates="user", cascade="all, delete-orphan"
+    )
+    mfa: Mapped[Optional["UserMFA"]] = relationship(
+        "UserMFA", back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
+    bans: Mapped[List["AppBan"]] = relationship(
+        "AppBan", back_populates="user", cascade="all, delete-orphan", foreign_keys="AppBan.user_id"
     )
     plan: Mapped["Plan"] = relationship("Plan", back_populates="users")
 

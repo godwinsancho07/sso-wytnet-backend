@@ -1,8 +1,12 @@
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 from sqlalchemy import String, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from .user import User
 
 
 class ClientAdmin(Base):
@@ -29,5 +33,5 @@ class ClientAdmin(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
-    user = relationship("User", backref="administered_clients")
+    user: Mapped["User"] = relationship("User", back_populates="administered_clients")
     client = relationship("OAuthClient", back_populates="admins")
