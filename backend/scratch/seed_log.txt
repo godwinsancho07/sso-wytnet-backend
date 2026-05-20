@@ -1,3 +1,9 @@
-Startup tasks at 2026-05-19 22:58:20.550096
+Startup tasks at 2026-05-20 15:33:56.406939
 App bans in DB: 1
+CURRENT PLANS IN DB:
+- ID: f5f1e918-ce50-489b-a73f-42dfe1bdb0d1, Name: 'Basic', Type: PlanType.USER, Price: 0.0, Active: True
+- ID: 033d40f5-89a6-4d88-a593-198ef58132a1, Name: 'Growth', Type: PlanType.DEVELOPER, Price: 1.0, Active: True
+- ID: 0760d0fb-0a8d-4cba-b749-41fd01702770, Name: 'Premium', Type: PlanType.USER, Price: 2.0, Active: True
+- ID: c85f620e-7aba-427c-80d5-53973291fa04, Name: 'Starter', Type: PlanType.DEVELOPER, Price: 0.0, Active: True
+- ID: 39374b02-efc2-43c0-b9c1-74481a78a844, Name: 'Pro', Type: PlanType.DEVELOPER, Price: 2.0, Active: True
 Successfully synced permissions, roles, plans, and dev users

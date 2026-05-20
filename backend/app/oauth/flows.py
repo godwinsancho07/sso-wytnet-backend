@@ -360,8 +360,13 @@ class OAuthFlowService:
             subject=user.id,
             scopes=auth_code.scopes,
             client_id=client_id,
-            extra={"email": user.email},
+            extra={
+                "email": user.email,
+                "name": user.full_name,
+                "full_name": user.full_name
+            },
         )
+
         await self.access_tokens.create(
             token=access_token_str,
             user_id=user.id,
@@ -433,8 +438,13 @@ class OAuthFlowService:
             subject=user.id,
             scopes=token_obj.scopes,
             client_id=client_id,
-            extra={"email": user.email},
+            extra={
+                "email": user.email,
+                "name": user.full_name,
+                "full_name": user.full_name
+            },
         )
+
         new_refresh = generate_token(48)
 
         await self.access_tokens.create(

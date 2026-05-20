@@ -14,16 +14,16 @@ from app.schemas.plan import (
 from app.api.deps import get_current_superuser, CurrentUser, get_client_ip
 from app.models.role import Role, UserRole
 from app.config import settings
-import razorpay
 import os
 import logging
+import hmac
+import hashlib
+import httpx
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Initialize Razorpay Client
-client = razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
 print("!!! PLANS ROUTER LOADING !!!")
 
 @router.get("", response_model=List[PlanResponse])
@@ -84,6 +84,78 @@ async def get_public_plans(
     db: AsyncSession = Depends(get_db)
 ):
     """Publicly accessible list of active plans."""
+    # Direct database override to ensure plans have correct prices
+    from sqlalchemy import text
+    try:
+        await db.execute(text("UPDATE plans SET price = 1.0 WHERE (name = 'Growth' or name = 'growth') and type = 'DEVELOPER'"))
+        await db.execute(text("UPDATE plans SET price = 2.0 WHERE (name = 'Pro' or name = 'pro') and type = 'DEVELOPER'"))
+        await db.commit()
+    except Exception as sql_err:
+        logger.error(f"Direct SQL update failed: {str(sql_err)}")
+
+    # Delete legacy Pro user plan if it exists
+    res = await db.execute(
+        select(Plan).where(
+            Plan.type == PlanType.USER,
+            (Plan.name == "Pro") | (Plan.name == "Pro Plan") | (Plan.name.ilike("%pro%"))
+        )
+    )
+    pro_user_plans = res.scalars().all()
+    for p in pro_user_plans:
+        await db.delete(p)
+    if pro_user_plans:
+        await db.commit()
+
+    # Sync Developer Plans to match WytSaaS Marketplace (Starter, Growth, Pro)
+    if plan_type == PlanType.DEVELOPER or plan_type is None:
+        res = await db.execute(select(Plan).where(Plan.type == PlanType.DEVELOPER))
+        dev_plans = res.scalars().all()
+        
+        starter = next((p for p in dev_plans if p.name.lower() in ["starter", "free"]), None)
+        growth = next((p for p in dev_plans if p.name.lower() in ["growth", "growth plan"]), None)
+        pro = next((p for p in dev_plans if p.name.lower() in ["pro", "unlimited", "pro plan"]), None)
+        
+        # Force update Starter
+        if starter:
+            starter.name = "Starter"
+            starter.app_registrations_limit = 1
+            starter.price = 0.0
+            starter.description = "1 Hosted App, 1,000 Users Limit"
+        else:
+            starter = Plan(name="Starter", type=PlanType.DEVELOPER, price=0.0, description="1 Hosted App, 1,000 Users Limit", app_registrations_limit=1, is_default=True, is_active=True)
+            db.add(starter)
+            
+        # Force update Growth
+        if growth:
+            growth.name = "Growth"
+            growth.app_registrations_limit = 5
+            growth.price = 1.0
+            growth.description = "5 Hosted Apps, 10,000 Users Limit"
+        else:
+            growth = Plan(name="Growth", type=PlanType.DEVELOPER, price=1.0, description="5 Hosted Apps, 10,000 Users Limit", app_registrations_limit=5, is_default=False, is_active=True)
+            db.add(growth)
+            
+        # Force update Pro
+        if pro:
+            pro.name = "Pro"
+            pro.app_registrations_limit = 0
+            pro.price = 2.0
+            pro.description = "Unlimited Apps, Unlimited Users"
+        else:
+            pro = Plan(name="Pro", type=PlanType.DEVELOPER, price=2.0, description="Unlimited Apps, Unlimited Users", app_registrations_limit=0, is_default=False, is_active=True)
+            db.add(pro)
+
+        # Flush session to assign IDs to new plans before delete check
+        await db.flush()
+
+        # Delete any other developer plans
+        valid_ids = [p.id for p in [starter, growth, pro] if p]
+        for p in dev_plans:
+            if p.id not in valid_ids:
+                await db.delete(p)
+
+        await db.commit()
+
     query = select(Plan).where(Plan.is_active == True)
     if plan_type:
         query = query.where(Plan.type == plan_type)
@@ -172,7 +244,15 @@ async def create_razorpay_order(
     }
     
     try:
-        order = client.order.create(data=data)
+        url = "https://api.razorpay.com/v1/orders"
+        with httpx.Client() as client:
+            response = client.post(
+                url,
+                json=data,
+                auth=(settings.razorpay_key_id, settings.razorpay_key_secret)
+            )
+            response.raise_for_status()
+            order = response.json()
         return {
             "order_id": order['id'],
             "amount": amount,
@@ -190,13 +270,17 @@ async def verify_razorpay_payment(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db)
 ):
-    # Verify signature
+    # Verify signature natively
     try:
-        client.utility.verify_payment_signature({
-            'razorpay_order_id': verification.razorpay_order_id,
-            'razorpay_payment_id': verification.razorpay_payment_id,
-            'razorpay_signature': verification.razorpay_signature
-        })
+        msg = f"{verification.razorpay_order_id}|{verification.razorpay_payment_id}"
+        generated_signature = hmac.new(
+            settings.razorpay_key_secret.encode('utf-8'),
+            msg.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        if not hmac.compare_digest(generated_signature, verification.razorpay_signature):
+            raise HTTPException(status_code=400, detail="Invalid payment signature")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid payment signature")
 
@@ -233,6 +317,16 @@ async def verify_razorpay_payment(
                     .values(plan_id=plan.id)
                 )
 
+        log = CreditLog(
+            owner_id=current_user.id,
+            event_type="plan_upgrade",
+            description=f"{desc} - Razorpay: {verification.razorpay_payment_id}",
+            credits_change=0
+        )
+        db.add(log)
+    elif plan.type == PlanType.USER:
+        current_user.plan_id = plan.id
+        desc = f"Upgraded user subscription to {plan.name} (Paid ₹{plan.price})"
         log = CreditLog(
             owner_id=current_user.id,
             event_type="plan_upgrade",

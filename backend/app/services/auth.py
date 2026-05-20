@@ -177,10 +177,13 @@ class AuthService:
             client_id=client_id,
             extra={
                 "email": user.email,
+                "full_name": user.full_name,
+                "name": user.full_name,
                 "roles": roles,
                 "is_superuser": user.is_superuser
             },
         )
+
         refresh_token_str = generate_token(48)
         session_token_str = generate_token(48)
 
@@ -272,10 +275,13 @@ class AuthService:
             client_id=token_obj.client_id,
             extra={
                 "email": user.email,
+                "full_name": user.full_name,
+                "name": user.full_name,
                 "roles": roles,
                 "is_superuser": user.is_superuser
             },
         )
+
         new_refresh = generate_token(48)
 
         now = datetime.now(timezone.utc)

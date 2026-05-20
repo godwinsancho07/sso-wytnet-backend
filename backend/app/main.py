@@ -228,6 +228,38 @@ async def lifespan(app: FastAPI):
                     ))
                     f.write("Created default Basic user plan\n")
                 
+                # Premium User Plan
+                res = await db.execute(select(Plan).where(Plan.type == PlanType.USER, Plan.name == "Premium"))
+                premium_plan = res.scalar_one_or_none()
+                if not premium_plan:
+                    db.add(Plan(
+                        name="Premium",
+                        type=PlanType.USER,
+                        price=2.0,
+                        description="Full AI assistance suite with unlimited questions",
+                        credits_limit=0, # unlimited
+                        is_default=False,
+                        is_active=True
+                    ))
+                    f.write("Created Premium user plan\n")
+                elif premium_plan.price != 2.0:
+                    premium_plan.price = 2.0
+                    f.write("Updated Premium user plan price to 2.0\n")
+                
+                # Delete legacy "Pro" user plan if it exists
+                res = await db.execute(select(Plan).where(Plan.type == PlanType.USER, Plan.name == "Pro"))
+                pro_user_plan = res.scalar_one_or_none()
+                if pro_user_plan:
+                    await db.delete(pro_user_plan)
+                    f.write("Deleted legacy Pro user plan\n")
+
+                # Dump all plans for debugging
+                res_all = await db.execute(select(Plan))
+                all_plans = res_all.scalars().all()
+                f.write("CURRENT PLANS IN DB:\n")
+                for p in all_plans:
+                    f.write(f"- ID: {p.id}, Name: '{p.name}', Type: {p.type}, Price: {p.price}, Active: {p.is_active}\n")
+
                 await db.commit()
                 f.write("Successfully synced permissions, roles, plans, and dev users\n")
     except Exception as e:
