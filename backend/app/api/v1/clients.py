@@ -66,9 +66,18 @@ async def list_clients(
     if await is_super_admin(db, current_user):
         clients = await repo.list_active(offset=offset, limit=limit)
     else:
-        # App admin: only the clients they own
-        owned_ids = await get_owned_client_ids(db, current_user)
-        clients = [c for c in await repo.list_active(offset=0, limit=1000) if c.id in owned_ids]
+        # App admin: fetch clients via direct JOIN on ClientAdmin — no Python filtering
+        stmt = (
+            select(OAuthClient)
+            .join(ClientAdmin, ClientAdmin.client_id == OAuthClient.id)
+            .where(
+                ClientAdmin.user_id == current_user.id,
+                OAuthClient.is_active == True,
+            )
+            .order_by(OAuthClient.app_name)
+        )
+        result = await db.execute(stmt)
+        clients = list(result.scalars().all())
     
     results = []
     for c in clients:
@@ -361,3 +370,34 @@ async def integration_docs_md(
             f'attachment; filename="{safe_name}-sso-integration.md"'
         )
     return Response(content=md, media_type="text/markdown", headers=headers)
+
+
+# ── Self-repair: claim orphaned clients ──────────────────────────────────────
+
+@router.post(
+    "/claim-unclaimed",
+    dependencies=[Depends(require_permission("client:read"))],
+)
+async def claim_unclaimed_clients(current_user: CurrentUser, db: DB) -> dict:
+    """Auto-assigns the current user as admin for any active clients that have
+    NO admin assigned at all (orphaned apps). Safe to call repeatedly — idempotent."""
+    from sqlalchemy import not_, exists
+
+    # Find active clients that have zero ClientAdmin rows
+    has_admin = exists().where(ClientAdmin.client_id == OAuthClient.id)
+    orphan_stmt = (
+        select(OAuthClient)
+        .where(OAuthClient.is_active == True, ~has_admin)
+    )
+    result = await db.execute(orphan_stmt)
+    orphans = result.scalars().all()
+
+    claimed = []
+    for client in orphans:
+        db.add(ClientAdmin(user_id=current_user.id, client_id=client.id))
+        claimed.append(client.app_name)
+
+    if claimed:
+        await db.commit()
+
+    return {"claimed": claimed, "count": len(claimed)}
