@@ -1,6 +1,7 @@
+from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from sqlalchemy import String, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
@@ -17,11 +18,11 @@ class AppBan(Base):
     )
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     client_id: Mapped[str] = mapped_column(String(36), ForeignKey("oauth_clients.id", ondelete="CASCADE"), nullable=False, index=True)
-    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     banned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
-    banned_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    banned_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="bans", foreign_keys=[user_id])
     client: Mapped["OAuthClient"] = relationship("OAuthClient", back_populates="bans")

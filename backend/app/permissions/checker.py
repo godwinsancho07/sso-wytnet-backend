@@ -4,7 +4,7 @@ Permission enforcement layer. Industry pattern (AWS IAM / Keycloak):
 - Ownership/scoping is checked separately, not encoded in permission name
 - Super admins bypass ownership checks; app admins must own the resource
 """
-from typing import List, Sequence
+from typing import List, Sequence, Optional
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,8 +89,8 @@ class PermissionChecker:
     def __init__(self, db: AsyncSession, user: User):
         self.db = db
         self.user = user
-        self._permissions: set[str] | None = None
-        self._is_super: bool | None = None
+        self._permissions: Optional[set[str]] = None
+        self._is_super: Optional[bool] = None
 
     async def permissions(self) -> set[str]:
         if self._permissions is None:

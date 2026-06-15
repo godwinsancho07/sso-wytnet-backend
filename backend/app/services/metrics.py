@@ -1,6 +1,6 @@
 """Operational metrics derived from audit_logs + token + session tables."""
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -419,7 +419,7 @@ class MetricsService:
         client_db_id: str, 
         offset: int = 0, 
         limit: int = 20,
-        query: str | None = None
+        query: Optional[str] = None
     ) -> Dict[str, Any]:
         from app.models.app_ban import AppBan
         from sqlalchemy import case, or_

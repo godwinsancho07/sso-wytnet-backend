@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
 
         async with async_session_factory() as db:
             # Create a debug file to confirm execution
-            with open("c:\\Users\\Ayisha\\Music\\sso wytnet2\\backend\\scratch\\seed_log.txt", "w") as f:
+            with open("scratch/seed_log.txt", "w") as f:
                 f.write(f"Startup tasks at {datetime.now()}\n")
                 
                 # Check ban count
@@ -264,8 +264,11 @@ async def lifespan(app: FastAPI):
                 f.write("Successfully synced permissions, roles, plans, and dev users\n")
     except Exception as e:
         logger.error(f"Failed to sync permissions: {e}", exc_info=True)
-        with open("c:\\Users\\Ayisha\\Music\\sso wytnet2\\backend\\scratch\\seed_log.txt", "a") as f:
-            f.write(f"ERROR: {e}\n")
+        try:
+            with open("scratch/seed_log.txt", "a") as f:
+                f.write(f"ERROR: {e}\n")
+        except Exception:
+            pass
 
 
     logger.info("SSO Identity Provider started")

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, delete, func
@@ -224,8 +224,8 @@ class ClientAdminAssign(BaseModel):
 class ClientAdminRead(BaseModel):
     user_id: str
     email: str
-    full_name: str | None = None
-    avatar_url: str | None = None
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
     assigned_at: str
 
 

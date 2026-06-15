@@ -143,7 +143,7 @@ async def audit_recent(
     db: DB,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    event_type: str | None = None,
+    event_type: Optional[str] = None,
 ) -> list:
     repo = AuditLogRepository(db)
     if event_type:
@@ -186,7 +186,7 @@ async def app_users_paginated(
     db: DB,
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    q: str | None = Query(None),
+    q: Optional[str] = Query(None),
 ) -> dict:
     # Ensure tables exist (temporary fix for missing app_bans)
     from app.db.base import Base
@@ -205,7 +205,7 @@ async def ban_user_from_app(
     user_id: str,
     current_user: CurrentUser,
     db: DB,
-    reason: str | None = None,
+    reason: Optional[str] = None,
 ) -> dict:
     if not await user_owns_client(db, current_user, client_id):
         raise PermissionDeniedError("client:edit")
