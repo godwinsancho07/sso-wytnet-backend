@@ -280,8 +280,8 @@ app = FastAPI(
     title=settings.app_name,
     description="Production-grade SSO Identity Provider",
     version="1.0.0",
-    docs_url="/docs" if settings.debug else None,
-    redoc_url="/redoc" if settings.debug else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan,
 )
 
